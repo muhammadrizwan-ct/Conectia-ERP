@@ -11,7 +11,15 @@ async function fetchClientsFromSupabase() {
         console.error('Supabase fetch error:', error);
         return [];
     }
-    return data || [];
+    return (data || []).map((client) => ({
+        ...client,
+        clientId: client.clientId || client.clientid || null,
+        defaultUnitPrice: Number(client.defaultUnitPrice ?? client.default_unit_price ?? 0) || 0,
+        vehicleCount: Number(client.vehicleCount ?? client.vehicle_count ?? 0) || 0,
+        totalInvoices: Number(client.totalInvoices ?? client.total_invoices ?? 0) || 0,
+        balance: Number(client.balance ?? 0) || 0,
+        status: client.status || 'Active'
+    }));
 }
 
 // Save (insert) a new client to Supabase
