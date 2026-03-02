@@ -18,12 +18,14 @@ async function fetchClientsFromSupabase() {
 async function saveClientToSupabase(client) {
     const { data, error } = await supabase
         .from('clients')
-        .insert([client]);
+        .insert([client])
+        .select('*')
+        .single();
     if (error) {
         console.error('Supabase insert error:', error);
         return null;
     }
-    return data && data[0];
+    return data || null;
 }
 // Function to generate next client ID
 function getNextClientId() {
@@ -495,11 +497,19 @@ async function saveNewClient(event) {
         return;
     }
 
-    // Add to clients list using persisted row
-    window.allClients.push({
-        ...newClientPayload,
-        ...(savedClient || {})
-    });
+    // Reload from Supabase so UI always reflects persisted state
+    try {
+        window.allClients = await fetchClientsFromSupabase();
+    } catch (error) {
+        console.error('Error reloading clients after save:', error);
+        window.allClients = [
+            ...(window.allClients || []),
+            {
+                ...newClientPayload,
+                ...(savedClient || {})
+            }
+        ];
+    }
     
     // Update table
     displayClientsTable(window.allClients);
