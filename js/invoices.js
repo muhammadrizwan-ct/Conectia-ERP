@@ -1653,6 +1653,26 @@ async function showGenerateInvoiceModal() {
     }
 
     try {
+        const normalizeName = (value) => String(value || '').replace(/\s+/g, ' ').trim();
+        const normalizeNameLower = (value) => normalizeName(value).toLowerCase();
+        const normalizeClientListResponse = (response) => {
+            if (Array.isArray(response)) return response;
+            if (response && Array.isArray(response.clients)) return response.clients;
+            if (response && Array.isArray(response.items)) return response.items;
+            if (response && Array.isArray(response.results)) return response.results;
+            if (response && Array.isArray(response.rows)) return response.rows;
+            if (response && response.data && Array.isArray(response.data.clients)) return response.data.clients;
+            if (response && response.data && Array.isArray(response.data.items)) return response.data.items;
+            if (response && response.data && Array.isArray(response.data.results)) return response.data.results;
+            if (response && response.data && Array.isArray(response.data.rows)) return response.data.rows;
+            if (response && response.data && Array.isArray(response.data.data)) return response.data.data;
+            if (response && response.payload && Array.isArray(response.payload.clients)) return response.payload.clients;
+            if (response && response.payload && Array.isArray(response.payload.items)) return response.payload.items;
+            if (response && response.payload && Array.isArray(response.payload.data)) return response.payload.data;
+            if (response && response.data && Array.isArray(response.data)) return response.data;
+            return [];
+        };
+
         // Get clients for mapping and vehicles for dropdown names
         let clientsList = [];
         let vehiclesList = [];
@@ -1661,14 +1681,22 @@ async function showGenerateInvoiceModal() {
                 API.getClients({ limit: 1000 }),
                 API.getVehicles({ limit: 2000 })
             ]);
-            clientsList = Array.isArray(clientsResponse) ? clientsResponse : (clientsResponse.clients || []);
-            vehiclesList = Array.isArray(vehiclesResponse) ? vehiclesResponse : (vehiclesResponse.vehicles || []);
+            clientsList = normalizeClientListResponse(clientsResponse);
+            vehiclesList = Array.isArray(vehiclesResponse)
+                ? vehiclesResponse
+                : (vehiclesResponse?.vehicles || vehiclesResponse?.items || vehiclesResponse?.results || []);
         } catch (e) {
             clientsList = loadClientsFromStorage();
+            if ((!clientsList || clientsList.length === 0) && typeof fetchClientsFromSupabase === 'function') {
+                clientsList = await fetchClientsFromSupabase();
+            }
+
             vehiclesList = loadVehiclesFromStorage();
+            if ((!vehiclesList || vehiclesList.length === 0) && typeof fetchVehiclesFromSupabase === 'function') {
+                vehiclesList = await fetchVehiclesFromSupabase();
+            }
         }
 
-        const normalizeName = (value) => String(value || '').replace(/\s+/g, ' ').trim();
         const clientNameToRecord = new Map();
         (clientsList || []).forEach((client) => {
             const name = normalizeName(client?.name || client?.clientName || client?.companyName || client?.businessName || '');
@@ -1678,29 +1706,41 @@ async function showGenerateInvoiceModal() {
             }
         });
 
-        const vehicleClientNames = [...new Set((vehiclesList || [])
-            .map((vehicle) => normalizeName(vehicle?.clientName || vehicle?.client || ''))
-            .filter(Boolean)
-            .map((name) => name.toLowerCase()))]
-            .map((nameLower) => {
-                const mappedClient = clientNameToRecord.get(nameLower);
-                return mappedClient
-                    ? normalizeName(mappedClient.name || mappedClient.clientName || mappedClient.companyName || mappedClient.businessName || '')
-                    : normalizeName(nameLower);
+        const uniqueClientMap = new Map();
+        (clientsList || [])
+            .filter((client) => {
+                const status = String(client?.status || client?.clientStatus || 'Active').toLowerCase();
+                return !status || status === 'active';
             })
-            .filter(Boolean)
-            .sort((a, b) => a.localeCompare(b));
+            .forEach((client) => {
+                const clientName = normalizeName(client?.name || client?.clientName || client?.companyName || client?.businessName || '');
+                if (!clientName) return;
+                const key = normalizeNameLower(clientName);
+                if (!uniqueClientMap.has(key)) {
+                    uniqueClientMap.set(key, {
+                        clientName,
+                        clientRecord: client
+                    });
+                }
+            });
 
-        const dropdownClientNames = vehicleClientNames.length > 0
-            ? vehicleClientNames
-            : (clientsList || [])
-                .filter(client => (client.status || 'Active') === 'Active')
-                .map(client => normalizeName(client.name || client.clientName || client.companyName || client.businessName || ''))
-                .filter(Boolean)
-                .sort((a, b) => a.localeCompare(b));
+        if (uniqueClientMap.size === 0) {
+            (vehiclesList || []).forEach((vehicle) => {
+                const clientName = normalizeName(vehicle?.clientName || vehicle?.clientname || vehicle?.client || '');
+                if (!clientName) return;
+                const key = normalizeNameLower(clientName);
+                if (!uniqueClientMap.has(key)) {
+                    uniqueClientMap.set(key, {
+                        clientName,
+                        clientRecord: clientNameToRecord.get(key) || null
+                    });
+                }
+            });
+        }
 
-        const clientOptionsHtml = dropdownClientNames.map((clientName) => {
-            const clientRecord = clientNameToRecord.get(clientName.toLowerCase());
+        const clientOptionsHtml = Array.from(uniqueClientMap.values())
+            .sort((a, b) => a.clientName.localeCompare(b.clientName))
+            .map(({ clientName, clientRecord }) => {
             const clientIdentifier = clientRecord ? String(clientRecord.clientId || clientRecord.id || '').trim() : '';
             const optionValue = clientIdentifier ? `id:${clientIdentifier}` : `name:${clientName}`;
             return `<option value="${optionValue}">${clientName}</option>`;
@@ -1719,8 +1759,9 @@ async function showGenerateInvoiceModal() {
                 
                 <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 16px;">
                     <div class="form-group">
-                        <label>Invoice Number</label>
-                        <input type="text" id="invoice-no" value="${nextInvoiceNo}" readonly style="background: var(--gray-100); font-weight: 600;">
+                        <label>Invoice Number (Optional)</label>
+                        <input type="text" id="invoice-no" value="" placeholder="Leave blank for auto: ${nextInvoiceNo}" style="font-weight: 600;">
+                        <small style="color: var(--gray-600); font-size: 12px; margin-top: 4px; display: block;">If empty, next sequence number will be used automatically.</small>
                     </div>
                     
                     <div class="form-group">
@@ -1831,7 +1872,8 @@ async function showGenerateInvoiceModal() {
         
         showModal('Generate Professional Invoice', content, async (modal) => {
             const selectedClientValue = document.getElementById('invoice-client').value;
-            const invoiceNo = document.getElementById('invoice-no').value;
+            const invoiceNoInput = String(document.getElementById('invoice-no').value || '').trim();
+            const invoiceNo = invoiceNoInput || nextInvoiceNo;
             const month = document.getElementById('invoice-month').value;
             const invoiceDate = document.getElementById('invoice-date').value;
             const dueDate = document.getElementById('invoice-due-date').value;
