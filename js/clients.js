@@ -1,5 +1,53 @@
 // --- Supabase Integration ---
 var supabase = window.supabaseClient;
+const CLIENT_DEFAULT_RATE_STORAGE_KEY = 'vts_client_default_rates';
+
+function loadClientDefaultRateMap() {
+    try {
+        return JSON.parse(localStorage.getItem(CLIENT_DEFAULT_RATE_STORAGE_KEY) || '{}') || {};
+    } catch (error) {
+        return {};
+    }
+}
+
+function saveClientDefaultRateMap(map) {
+    localStorage.setItem(CLIENT_DEFAULT_RATE_STORAGE_KEY, JSON.stringify(map || {}));
+}
+
+function buildClientRateKeys(client = {}) {
+    const keys = [];
+    const clientId = String(client.clientId || client.clientid || '').trim();
+    const name = String(client.name || '').trim().toLowerCase();
+
+    if (clientId) {
+        keys.push(`id:${clientId}`);
+    }
+    if (name) {
+        keys.push(`name:${name}`);
+    }
+    return keys;
+}
+
+function rememberClientDefaultRate(client = {}) {
+    const rate = Number(client.defaultUnitPrice ?? client.default_unit_price ?? 0);
+    if (!rate || rate <= 0) return;
+
+    const map = loadClientDefaultRateMap();
+    const keys = buildClientRateKeys(client);
+    keys.forEach((key) => {
+        map[key] = rate;
+    });
+    saveClientDefaultRateMap(map);
+}
+
+function removeClientDefaultRate(client = {}) {
+    const map = loadClientDefaultRateMap();
+    const keys = buildClientRateKeys(client);
+    keys.forEach((key) => {
+        delete map[key];
+    });
+    saveClientDefaultRateMap(map);
+}
 
 // Fetch all clients from Supabase
 async function fetchClientsFromSupabase() {
@@ -11,15 +59,24 @@ async function fetchClientsFromSupabase() {
         console.error('Supabase fetch error:', error);
         return [];
     }
-    return (data || []).map((client) => ({
-        ...client,
-        clientId: client.clientId || client.clientid || null,
-        defaultUnitPrice: Number(client.defaultUnitPrice ?? client.default_unit_price ?? 0) || 0,
+    const defaultRateMap = loadClientDefaultRateMap();
+    return (data || []).map((client) => {
+        const normalizedClientId = client.clientId || client.clientid || null;
+        const byColumnRate = Number(client.defaultUnitPrice ?? client.default_unit_price ?? 0) || 0;
+        const byIdRate = normalizedClientId ? Number(defaultRateMap[`id:${normalizedClientId}`] || 0) : 0;
+        const byNameRate = Number(defaultRateMap[`name:${String(client.name || '').trim().toLowerCase()}`] || 0);
+        const resolvedRate = byColumnRate || byIdRate || byNameRate || 0;
+
+        return {
+            ...client,
+            clientId: normalizedClientId,
+            defaultUnitPrice: resolvedRate,
         vehicleCount: Number(client.vehicleCount ?? client.vehicle_count ?? 0) || 0,
         totalInvoices: Number(client.totalInvoices ?? client.total_invoices ?? 0) || 0,
         balance: Number(client.balance ?? 0) || 0,
         status: client.status || 'Active'
-    }));
+        };
+    });
 }
 
 // Save (insert) a new client to Supabase
@@ -619,6 +676,11 @@ async function saveNewClient(event) {
         return;
     }
 
+    rememberClientDefaultRate({
+        ...newClientPayload,
+        ...(savedClient || {})
+    });
+
     // Reload from Supabase so UI always reflects persisted state
     try {
         window.allClients = await fetchClientsFromSupabase();
@@ -803,6 +865,11 @@ async function updateClient(event, clientId) {
         return;
     }
 
+    rememberClientDefaultRate({
+        ...updatedClientPayload,
+        ...(updatedRow || {})
+    });
+
     try {
         window.allClients = await fetchClientsFromSupabase();
     } catch (error) {
@@ -871,6 +938,7 @@ async function confirmDeleteClient(clientId) {
     }
 
     const targetId = toComparableId(clientId);
+    const existingClient = (window.allClients || []).find((c) => toComparableId(c.id) === targetId);
     const deleted = await deleteClientFromSupabase(targetId);
     if (!deleted) {
         showNotification('Client delete failed on Supabase.', 'error');
@@ -879,6 +947,9 @@ async function confirmDeleteClient(clientId) {
 
     // Remove client from list
     window.allClients = window.allClients.filter(c => toComparableId(c.id) !== targetId);
+    if (existingClient) {
+        removeClientDefaultRate(existingClient);
+    }
     
     // Update table
     displayClientsTable(window.allClients);
