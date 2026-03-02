@@ -526,6 +526,7 @@ async function logout() {
 
 window.ensureDataActionPermission = ensureDataActionPermission;
 window.ensureFeaturePermission = ensureFeaturePermission;
+window.navigateToPage = navigateToPage;
 
 // Update user info in sidebar
 function updateUserInfo() {
@@ -610,7 +611,7 @@ function renderSidebar() {
                     </div>
                     <div class="nav-submenu" id="${item.page}-submenu">
                         ${item.children.map(child => `
-                            <div class="nav-item nav-subitem" data-page="${child.page}" onclick="event.stopPropagation(); window.location.hash = '#/${child.page}'">
+                            <div class="nav-item nav-subitem" data-page="${child.page}" onclick="event.stopPropagation(); navigateToPage('${child.page}')">
                                 <i class="fas ${child.icon}"></i>
                                 <span>${child.text}</span>
                             </div>
@@ -621,7 +622,7 @@ function renderSidebar() {
             }
 
             html += `
-                <div class="nav-item" data-page="${item.page}" onclick="window.location.hash = '#/${item.page}'">
+                <div class="nav-item" data-page="${item.page}" onclick="navigateToPage('${item.page}')">
                     <i class="fas ${item.icon}"></i>
                     <span>${item.text}</span>
                 </div>
@@ -695,8 +696,19 @@ function toggleSidebarSubmenu(parentPage, defaultPage) {
     }
 
     if (!isOpen && !(currentPage === parentPage || currentPage.startsWith(`${parentPage}-`))) {
-        loadPage(defaultPage);
+        navigateToPage(defaultPage);
     }
+}
+
+function navigateToPage(page) {
+    const normalizedPage = String(page || 'dashboard').trim().toLowerCase();
+    const nextHash = `#/${normalizedPage}`;
+
+    if (window.location.hash !== nextHash) {
+        window.location.hash = nextHash;
+    }
+
+    loadPage(normalizedPage);
 }
 
 // Load page content
