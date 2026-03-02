@@ -3,9 +3,10 @@ const supabase = window.supabaseClient;
 
 // Fetch all clients from Supabase
 async function fetchClientsFromSupabase() {
-    const { data, error } = await supabase
+    const selectWithRetry = window.executeSupabaseSelect || (async (queryFn) => queryFn());
+    const { data, error } = await selectWithRetry(() => supabase
         .from('clients')
-        .select('*');
+        .select('*'));
     if (error) {
         console.error('Supabase fetch error:', error);
         return [];

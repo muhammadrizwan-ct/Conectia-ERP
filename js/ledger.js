@@ -3,9 +3,10 @@ const supabase = window.supabaseClient;
 
 // Fetch all ledger entries from Supabase
 async function fetchLedgerFromSupabase() {
-    const { data, error } = await supabase
+    const selectWithRetry = window.executeSupabaseSelect || (async (queryFn) => queryFn());
+    const { data, error } = await selectWithRetry(() => supabase
         .from('ledger')
-        .select('*');
+        .select('*'));
     if (error) {
         console.error('Supabase fetch error:', error);
         return [];
@@ -27,13 +28,27 @@ async function saveLedgerToSupabase(entry) {
 // Ledger Module
 async function loadLedger(initialTab = 'client') {
     document.getElementById('header-actions').innerHTML = '';
-
     const contentEl = document.getElementById('content-body');
     contentEl.innerHTML = `
         <div id="ledger-tab-content" class="ledger-tab-content"></div>
     `;
+    await renderLedgerTab(document.getElementById('ledger-tab-content'), initialTab);
 
-    await setActiveLedgerTab(initialTab);
+}
+
+async function renderLedgerTab(contentEl, tab) {
+    if (!contentEl) return;
+    // Only fetch from Supabase
+    let ledgerEntries = [];
+    try {
+        ledgerEntries = await fetchLedgerFromSupabase();
+    } catch (error) {
+        ledgerEntries = [];
+        console.error('Error loading ledger from Supabase:', error);
+    }
+    // You may want to filter or display ledgerEntries here
+    // For now, just display all
+    displayLedgerTable(ledgerEntries, []);
 }
 
 async function loadClientLedger() {

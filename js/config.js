@@ -2,7 +2,6 @@
 const CONFIG = {
     SUPABASE_URL: 'https://uowxtxsqtlyxjhnkyjho.supabase.co',
     SUPABASE_ANON_KEY: 'sb_publishable_Pe_Cs-YEpVY094yeziSsRw_jic4DhRS',
-    SUPABASE_URL: 'https://uowxtxsqtlyxjhnkyjho.supabase.co',
     // If running from file:// or no hostname, treat as local development
     API_BASE_URL: (window.location.protocol === 'file:' || window.location.hostname === '' || window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1')
         ? 'http://localhost:3000/api'
@@ -102,6 +101,52 @@ function runOneTimeDataReset() {
 
 window.clearPersistedBusinessData = clearPersistedBusinessData;
 window.runOneTimeDataReset = runOneTimeDataReset;
+
+function sleep(ms) {
+    return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+function shouldRetrySupabaseError(error) {
+    if (!error) return false;
+
+    const status = Number(error.status || 0);
+    if (status === 408 || status === 425 || status === 429 || status === 525 || status >= 500) {
+        return true;
+    }
+
+    const message = String(error.message || error.details || '').toLowerCase();
+    return (
+        message.includes('network') ||
+        message.includes('failed to fetch') ||
+        message.includes('timeout') ||
+        message.includes('ssl') ||
+        message.includes('handshake')
+    );
+}
+
+async function executeSupabaseSelect(queryFn, options = {}) {
+    const retries = Number.isInteger(options.retries) ? options.retries : 2;
+    const baseDelayMs = Number.isInteger(options.baseDelayMs) ? options.baseDelayMs : 500;
+
+    let attempt = 0;
+    while (attempt <= retries) {
+        const result = await queryFn();
+        if (!result?.error) {
+            return result;
+        }
+
+        if (attempt >= retries || !shouldRetrySupabaseError(result.error)) {
+            return result;
+        }
+
+        await sleep(baseDelayMs * (attempt + 1));
+        attempt += 1;
+    }
+
+    return { data: null, error: { message: 'Unknown Supabase read error' } };
+}
+
+window.executeSupabaseSelect = executeSupabaseSelect;
 
 // Error Messages
 const ERROR_MESSAGES = {

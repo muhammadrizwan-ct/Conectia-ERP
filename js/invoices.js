@@ -3,9 +3,10 @@ const supabase = window.supabaseClient;
 
 // Fetch all invoices from Supabase
 async function fetchInvoicesFromSupabase() {
-    const { data, error } = await supabase
+    const selectWithRetry = window.executeSupabaseSelect || (async (queryFn) => queryFn());
+    const { data, error } = await selectWithRetry(() => supabase
         .from('invoices')
-        .select('*');
+        .select('*'));
     if (error) {
         console.error('Supabase fetch error:', error);
         return [];
@@ -206,63 +207,21 @@ function renderVendorInvoicesTab(contentEl) {
 
 // Refresh invoices list from API
 async function refreshInvoicesList() {
-    const savedInvoices = loadInvoicesFromStorage();
-    if (savedInvoices && savedInvoices.length > 0) {
-        invoicesData = savedInvoices;
-        window.invoicesData = invoicesData;
-        displayInvoices(invoicesData);
-        updateInvoicesSummary(invoicesData);
-        updatePagination(invoicesData.length, currentInvoicesPage, CONFIG.ITEMS_PER_PAGE, 'invoices-pagination', (page) => {
-            currentInvoicesPage = page;
-            refreshInvoicesList();
-        });
-        attachInvoiceEventListeners();
-    }
-
     try {
-        const response = await Promise.race([
-            API.getInvoices({
-                page: currentInvoicesPage,
-                limit: CONFIG.ITEMS_PER_PAGE
-            }),
-            new Promise((_, reject) => setTimeout(() => reject(new Error('timeout')), 2500))
-        ]);
-
-        const apiInvoices = Array.isArray(response) ? response : (response?.invoices || []);
-        invoicesData = mergeInvoicesWithStorage(apiInvoices);
-        window.invoicesData = invoicesData; // Update global reference
-        saveInvoicesToStorage();
-        displayInvoices(invoicesData);
-        updateInvoicesSummary(invoicesData);
-        const totalRecords = Number(response?.total) || invoicesData.length;
-        updatePagination(totalRecords, currentInvoicesPage, CONFIG.ITEMS_PER_PAGE, 'invoices-pagination', (page) => {
-            currentInvoicesPage = page;
-            refreshInvoicesList();
-        });
-        
-        // Add event delegation for invoice action buttons
-// Add onclick handlers for each invoice action
-        attachInvoiceEventListeners();
-        
+        invoicesData = await fetchInvoicesFromSupabase();
+        window.invoicesData = invoicesData;
     } catch (error) {
-        console.error('Failed to load invoices:', error);
-        // Try to load from localStorage first
-        const fallbackInvoices = loadInvoicesFromStorage();
-        if (fallbackInvoices && fallbackInvoices.length > 0) {
-            invoicesData = fallbackInvoices;
-            window.invoicesData = invoicesData; // Update global reference
-        } else {
-            invoicesData = [];
-            window.invoicesData = invoicesData;
-        }
-        displayInvoices(invoicesData);
-        updateInvoicesSummary(invoicesData);
-        updatePagination(invoicesData.length, currentInvoicesPage, CONFIG.ITEMS_PER_PAGE, 'invoices-pagination', (page) => {
-            currentInvoicesPage = page;
-            refreshInvoicesList();
-        });
-        attachInvoiceEventListeners();
+        invoicesData = [];
+        window.invoicesData = invoicesData;
+        console.error('Failed to load invoices from Supabase:', error);
     }
+    displayInvoices(invoicesData);
+    updateInvoicesSummary(invoicesData);
+    updatePagination(invoicesData.length, currentInvoicesPage, CONFIG.ITEMS_PER_PAGE, 'invoices-pagination', (page) => {
+        currentInvoicesPage = page;
+        refreshInvoicesList();
+    });
+    attachInvoiceEventListeners();
 }
 
 // Attach event listeners for invoice action buttons

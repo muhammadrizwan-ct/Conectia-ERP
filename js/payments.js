@@ -3,9 +3,10 @@ const supabase = window.supabaseClient;
 
 // Fetch all payments from Supabase
 async function fetchPaymentsFromSupabase() {
-    const { data, error } = await supabase
+    const selectWithRetry = window.executeSupabaseSelect || (async (queryFn) => queryFn());
+    const { data, error } = await selectWithRetry(() => supabase
         .from('payments')
-        .select('*');
+        .select('*'));
     if (error) {
         console.error('Supabase fetch error:', error);
         return [];
@@ -27,15 +28,12 @@ async function savePaymentToSupabase(payment) {
 // Payments Module
 async function loadPayments(initialTab = 'client') {
     updatePaymentsHeaderActions(initialTab);
-    
     const contentEl = document.getElementById('content-body');
-    
     contentEl.innerHTML = `
         <div id="payment-tab-content" class="ledger-tab-content"></div>
     `;
-    
     window.paymentActiveTab = initialTab;
-    setActivePaymentTab(initialTab);
+    await renderPaymentsTab(document.getElementById('payment-tab-content'));
 }
 
 function updatePaymentsHeaderActions(tab) {
@@ -1663,6 +1661,29 @@ function displayPaymentsTable(payments) {
 async function loadPaymentsFromStorage() {
     // Fetch from Supabase
     return await fetchPaymentsFromSupabase();
+}
+
+async function renderPaymentsTab(contentEl) {
+    window.lastPaymentsSearchTerm = '';
+    contentEl.innerHTML = `
+        <div class="card">
+            <div class="card-header">
+                <h3>All Payments</h3>
+                <input type="text" id="search-payments" placeholder="Search payments..." 
+                    onkeyup="filterPayments(this.value)" style="width: 250px; padding: 8px; border: 1px solid var(--gray-300); border-radius: 4px;">
+            </div>
+            <div class="card-body">
+                <div id="payments-table-container"></div>
+            </div>
+        </div>
+    `;
+    try {
+        window.allPayments = await fetchPaymentsFromSupabase();
+    } catch (error) {
+        window.allPayments = [];
+        console.error('Error loading payments from Supabase:', error);
+    }
+    displayPaymentsTable(window.allPayments);
 }
 
 async function savePaymentsToStorage(payment) {

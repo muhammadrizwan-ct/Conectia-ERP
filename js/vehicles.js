@@ -3,9 +3,10 @@ const supabase = window.supabaseClient;
 
 // Fetch all vehicles from Supabase
 async function fetchVehiclesFromSupabase() {
-    const { data, error } = await supabase
+    const selectWithRetry = window.executeSupabaseSelect || (async (queryFn) => queryFn());
+    const { data, error } = await selectWithRetry(() => supabase
         .from('vehicles')
-        .select('*');
+        .select('*'));
     if (error) {
         console.error('Supabase fetch error:', error);
         return [];
