@@ -16,14 +16,101 @@ async function fetchInvoicesFromSupabase() {
 
 // Save (insert) a new invoice to Supabase
 async function saveInvoiceToSupabase(invoice) {
-    const { data, error } = await supabase
-        .from('invoices')
-        .insert([invoice]);
-    if (error) {
-        console.error('Supabase insert error:', error);
-        return null;
+    const buildSnakeCasePayload = (source) => ({
+        invoice_no: source.invoiceNo,
+        client_id: source.clientId,
+        client_name: source.clientName,
+        client_address: source.clientAddress,
+        client_phone: source.clientPhone,
+        client_email: source.clientEmail,
+        client_ntn: source.clientNTN,
+        client_strn: source.clientSTRN,
+        invoice_date: source.invoiceDate,
+        due_date: source.dueDate,
+        month: source.month,
+        status: source.status,
+        vehicle_count: source.vehicleCount,
+        subtotal: source.subtotal,
+        tax_amount: source.taxAmount,
+        total_amount: source.totalAmount,
+        paid_amount: source.paidAmount,
+        balance: source.balance,
+        invoice_type: source.invoiceType,
+        description_mode: source.descriptionMode,
+        items: source.items,
+        created_date: source.createdDate
+    });
+
+    const candidatePayloads = [
+        buildSnakeCasePayload(invoice),
+        {
+            invoiceNo: invoice.invoiceNo,
+            clientId: invoice.clientId,
+            clientName: invoice.clientName,
+            clientAddress: invoice.clientAddress,
+            clientPhone: invoice.clientPhone,
+            clientEmail: invoice.clientEmail,
+            clientNTN: invoice.clientNTN,
+            clientSTRN: invoice.clientSTRN,
+            invoiceDate: invoice.invoiceDate,
+            dueDate: invoice.dueDate,
+            month: invoice.month,
+            status: invoice.status,
+            vehicleCount: invoice.vehicleCount,
+            subtotal: invoice.subtotal,
+            taxAmount: invoice.taxAmount,
+            totalAmount: invoice.totalAmount,
+            paidAmount: invoice.paidAmount,
+            balance: invoice.balance,
+            invoiceType: invoice.invoiceType,
+            descriptionMode: invoice.descriptionMode,
+            items: invoice.items,
+            createdDate: invoice.createdDate
+        },
+        { ...invoice }
+    ];
+
+    let lastError = null;
+
+    for (const rawPayload of candidatePayloads) {
+        const payload = Object.fromEntries(
+            Object.entries(rawPayload).filter(([, value]) => value !== undefined)
+        );
+
+        let attempts = 0;
+        while (attempts < 24) {
+            const { data, error } = await supabase
+                .from('invoices')
+                .insert([payload])
+                .select('*')
+                .single();
+
+            if (!error) {
+                window.lastInvoiceSaveError = null;
+                return data || null;
+            }
+
+            lastError = error;
+            const message = String(error.message || '');
+            const missingColumnMatch = message.match(/Could not find the '([^']+)' column/i);
+            if (!missingColumnMatch) {
+                break;
+            }
+
+            const missingColumn = missingColumnMatch[1];
+            const matchingKey = Object.keys(payload).find((key) => key.toLowerCase() === missingColumn.toLowerCase());
+            if (!matchingKey) {
+                break;
+            }
+
+            delete payload[matchingKey];
+            attempts += 1;
+        }
     }
-    return data && data[0];
+
+    window.lastInvoiceSaveError = lastError;
+    console.error('Supabase insert error:', lastError);
+    return null;
 }
 // ============================================ //
 // INVOICES MODULE - Vehicle Tracking System
@@ -1971,10 +2058,20 @@ async function showGenerateInvoiceModal() {
                     createdDate: new Date().toISOString()
                 };
                 
-                // Add to local array
-                invoicesData.unshift(newInvoice);
-                window.invoicesData = invoicesData; // Update global reference
-                saveInvoicesToStorage();
+                const savedInvoice = await saveInvoicesToStorage(newInvoice);
+                if (!savedInvoice) {
+                    const errorDetails = window.lastInvoiceSaveError?.message || 'Unknown database error';
+                    showNotification(`Invoice not saved to Supabase: ${errorDetails}`, 'error');
+                    return false;
+                }
+
+                try {
+                    invoicesData = await fetchInvoicesFromSupabase();
+                } catch (error) {
+                    invoicesData.unshift(newInvoice);
+                }
+
+                window.invoicesData = invoicesData;
                 displayInvoices(invoicesData);
                 updateInvoicesSummary(invoicesData);
                 
@@ -2023,27 +2120,42 @@ async function loadClientVehiclesForInvoice() {
         let vehicles = [];
         try {
             if (selectedClientId) {
-                vehicles = await API.getClientVehicles(selectedClientId);
+                const apiResult = await API.getClientVehicles(selectedClientId);
+                vehicles = Array.isArray(apiResult)
+                    ? apiResult
+                    : (apiResult?.vehicles || apiResult?.items || apiResult?.results || apiResult?.rows || []);
             } else {
                 throw new Error('No client id available for direct client-vehicles API call');
             }
         } catch (e) {
-            const storedVehicles = loadVehiclesFromStorage();
-            if (storedVehicles && storedVehicles.length > 0) {
-                const storedClients = loadClientsFromStorage();
-                const selectedClient = selectedClientId
-                    ? storedClients.find(c => String(c.clientId || c.id) === String(selectedClientId))
-                    : storedClients.find(c => normalizeName(c.name || c.clientName || c.companyName || c.businessName || '') === normalizeName(selectedClientName));
-                vehicles = storedVehicles.filter(vehicle => {
-                    const vehicleClientName = normalizeName(vehicle.clientName || vehicle.client || '');
-                    const selectedName = normalizeName(selectedClient?.name || selectedClientName || '');
-                    const matchesId = selectedClientId && vehicle.clientId && String(vehicle.clientId) === String(selectedClientId);
-                    const matchesName = selectedName && vehicleClientName === selectedName;
-                    return matchesId || matchesName;
-                });
-            } else {
-                vehicles = [];
+            const allCandidates = [];
+
+            try {
+                const supabaseVehicles = typeof fetchVehiclesFromSupabase === 'function' ? await fetchVehiclesFromSupabase() : [];
+                if (Array.isArray(supabaseVehicles) && supabaseVehicles.length > 0) {
+                    allCandidates.push(...supabaseVehicles);
+                }
+            } catch (supabaseError) {
+                // Continue to next fallback
             }
+
+            if (Array.isArray(window.allVehicles) && window.allVehicles.length > 0) {
+                allCandidates.push(...window.allVehicles);
+            }
+
+            const storedVehicles = loadVehiclesFromStorage();
+            if (Array.isArray(storedVehicles) && storedVehicles.length > 0) {
+                allCandidates.push(...storedVehicles);
+            }
+
+            const selectedName = normalizeName(selectedClientName || '');
+            vehicles = allCandidates.filter((vehicle) => {
+                const vehicleClientId = String(vehicle?.clientId || vehicle?.client_id || '').trim();
+                const vehicleClientName = normalizeName(vehicle?.clientName || vehicle?.clientname || vehicle?.client || '');
+                const matchesId = selectedClientId && vehicleClientId && vehicleClientId === String(selectedClientId);
+                const matchesName = selectedName && vehicleClientName === selectedName;
+                return matchesId || matchesName;
+            });
         }
         
         if (!vehicles || vehicles.length === 0) {
@@ -2081,17 +2193,20 @@ async function loadClientVehiclesForInvoice() {
             html += `<div id="category-${category.replace(/[^a-zA-Z0-9]/g, '-')}" style="padding: 8px 0;">`;
             
             categoryVehicles.forEach(vehicle => {
+                const vehicleValue = vehicle.vehicleId || vehicle.id || '';
+                const vehicleName = vehicle.vehicleName || vehicle.name || vehicle.registrationNo || 'Vehicle';
+                const vehicleRate = Number(vehicle.monthlyRate || vehicle.unitRate || vehicle.monthly_rate || vehicle.unit_rate || 0) || 0;
                 html += `
                     <div style="display: flex; align-items: center; padding: 10px 12px; border-bottom: 1px solid var(--gray-200);">
                         <input type="checkbox" class="vehicle-checkbox" data-category="${category}" 
-                               value="${vehicle.vehicleId}" data-reg="${vehicle.registrationNo}" 
-                               data-name="${vehicle.vehicleName}" data-rate="${(vehicle.monthlyRate || vehicle.unitRate || 0)}" 
+                               value="${vehicleValue}" data-reg="${vehicle.registrationNo || ''}" 
+                               data-name="${vehicleName}" data-rate="${vehicleRate}" 
                                data-category="${category}" style="margin-right: 12px;" 
                                onchange="updateSelectedCount(); updateInvoicePreview();" checked>
                         <div style="flex: 1;">
                             <div style="display: flex; align-items: center; gap: 8px;">
-                                <span style="font-weight: 600;">${vehicle.registrationNo}</span>
-                                <span style="font-size: 12px; color: var(--gray-500);">${vehicle.vehicleName}</span>
+                                <span style="font-weight: 600;">${vehicle.registrationNo || '-'}</span>
+                                <span style="font-size: 12px; color: var(--gray-500);">${vehicleName}</span>
                             </div>
                             <div style="font-size: 11px; color: var(--gray-500); margin-top: 2px;">
                                 <span class="badge" style="background: var(--gray-200); padding: 2px 8px; border-radius: 999px;">
@@ -2099,7 +2214,7 @@ async function loadClientVehiclesForInvoice() {
                                 </span>
                             </div>
                         </div>
-                        <div style="font-weight: 600; color: var(--success);">${formatPKR((vehicle.monthlyRate || vehicle.unitRate || 0))}</div>
+                        <div style="font-weight: 600; color: var(--success);">${formatPKR(vehicleRate)}</div>
                     </div>
                 `;
             });
