@@ -488,6 +488,12 @@ function normalizeInvoiceMonth(value) {
     return (value || '').toString().trim().toLowerCase();
 }
 
+function resolveClientDefaultRateValue(client = {}) {
+    const rawRate = client?.defaultUnitPrice ?? client?.default_unit_price ?? client?.unitRate ?? client?.unit_rate ?? 0;
+    const parsedRate = Number(String(rawRate).replace(/,/g, '').trim());
+    return Number.isFinite(parsedRate) ? parsedRate : 0;
+}
+
 function getClientBillingDetails(invoice = {}) {
     const normalizeName = (value) => String(value || '').replace(/\s+/g, ' ').trim().toLowerCase();
     const clients = loadClientsFromStorage();
@@ -1825,12 +1831,19 @@ async function showGenerateInvoiceModal() {
             });
         }
 
+        window.invoiceClientRateMap = new Map();
+
         const clientOptionsHtml = Array.from(uniqueClientMap.values())
             .sort((a, b) => a.clientName.localeCompare(b.clientName))
             .map(({ clientName, clientRecord }) => {
             const clientIdentifier = clientRecord ? String(clientRecord.clientId || clientRecord.id || '').trim() : '';
+                const defaultRate = resolveClientDefaultRateValue(clientRecord);
             const optionValue = clientIdentifier ? `id:${clientIdentifier}` : `name:${clientName}`;
-            return `<option value="${optionValue}">${clientName}</option>`;
+                if (clientIdentifier) {
+                    window.invoiceClientRateMap.set(`id:${clientIdentifier}`, defaultRate);
+                }
+                window.invoiceClientRateMap.set(`name:${normalizeNameLower(clientName)}`, defaultRate);
+                return `<option value="${optionValue}" data-default-rate="${defaultRate}">${clientName}</option>`;
         }).join('');
         
         // Get next invoice number
@@ -2100,6 +2113,7 @@ async function showGenerateInvoiceModal() {
 // Load client vehicles for invoice generation
 async function loadClientVehiclesForInvoice() {
     const selectedClientValue = document.getElementById('invoice-client').value;
+    const selectedClientOption = document.getElementById('invoice-client').selectedOptions?.[0] || null;
     const vehiclesDiv = document.getElementById('vehicles-selection');
     const vehiclesList = document.getElementById('vehicles-list');
     
@@ -2112,6 +2126,12 @@ async function loadClientVehiclesForInvoice() {
     const selectedClientId = selectedById ? selectedClientValue.slice(3) : '';
     const selectedClientName = selectedById ? '' : selectedClientValue.replace(/^name:/, '');
     const normalizeName = (value) => String(value || '').replace(/\s+/g, ' ').trim().toLowerCase();
+
+    const clientRateMap = window.invoiceClientRateMap || new Map();
+    const optionDefaultRate = Number(selectedClientOption?.dataset?.defaultRate || 0) || 0;
+    const mappedRateById = selectedClientId ? Number(clientRateMap.get(`id:${selectedClientId}`) || 0) : 0;
+    const mappedRateByName = selectedClientName ? Number(clientRateMap.get(`name:${normalizeName(selectedClientName)}`) || 0) : 0;
+    const selectedClientDefaultRate = optionDefaultRate || mappedRateById || mappedRateByName || 0;
     
     vehiclesList.innerHTML = '<div style="text-align: center; padding: 20px;"><i class="fas fa-spinner fa-spin"></i> Loading vehicles...</div>';
     vehiclesDiv.style.display = 'block';
@@ -2162,6 +2182,20 @@ async function loadClientVehiclesForInvoice() {
             vehiclesList.innerHTML = '<p style="color: var(--danger); text-align: center; padding: 20px;">No active vehicles found for this client.</p>';
             return;
         }
+
+        const resolveVehicleRate = (vehicle) => {
+            const rawRate = vehicle?.monthlyRate ?? vehicle?.unitRate ?? vehicle?.monthly_rate ?? vehicle?.unit_rate ?? vehicle?.rate ?? vehicle?.unitPrice ?? vehicle?.unitprice ?? 0;
+            const parsedRate = Number(String(rawRate).replace(/,/g, '').trim());
+            if (Number.isFinite(parsedRate) && parsedRate > 0) {
+                return parsedRate;
+            }
+            return selectedClientDefaultRate;
+        };
+
+        vehicles = (vehicles || []).map((vehicle) => ({
+            ...vehicle,
+            __resolvedRate: resolveVehicleRate(vehicle)
+        }));
         
         // Group vehicles by category
         const categories = {};
@@ -2178,7 +2212,7 @@ async function loadClientVehiclesForInvoice() {
         
         Object.keys(categories).sort().forEach(category => {
             const categoryVehicles = categories[category];
-            const categoryTotal = categoryVehicles.reduce((sum, v) => sum + ((v.monthlyRate || v.unitRate) || 0), 0);
+            const categoryTotal = categoryVehicles.reduce((sum, v) => sum + (Number(v.__resolvedRate) || 0), 0);
             totalVehicles += categoryVehicles.length;
             
             html += `<div style="margin-bottom: 16px;">`;
@@ -2195,7 +2229,7 @@ async function loadClientVehiclesForInvoice() {
             categoryVehicles.forEach(vehicle => {
                 const vehicleValue = vehicle.vehicleId || vehicle.id || '';
                 const vehicleName = vehicle.vehicleName || vehicle.name || vehicle.registrationNo || 'Vehicle';
-                const vehicleRate = Number(vehicle.monthlyRate || vehicle.unitRate || vehicle.monthly_rate || vehicle.unit_rate || 0) || 0;
+                const vehicleRate = Number(vehicle.__resolvedRate || 0) || 0;
                 html += `
                     <div style="display: flex; align-items: center; padding: 10px 12px; border-bottom: 1px solid var(--gray-200);">
                         <input type="checkbox" class="vehicle-checkbox" data-category="${category}" 
