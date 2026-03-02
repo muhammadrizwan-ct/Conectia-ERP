@@ -1,5 +1,5 @@
 // --- Supabase Integration ---
-const supabase = window.supabaseClient;
+var supabase = window.supabaseClient;
 
 // Fetch all payments from Supabase
 async function fetchPaymentsFromSupabase() {
