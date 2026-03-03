@@ -112,11 +112,47 @@ function normalizeInvoiceRecord(record = {}) {
         invoiceNo,
         clientId: String(record.clientId || record.client_id || '').trim(),
         clientName: String(record.clientName || record.client_name || record.clientname || '').trim(),
-        clientAddress: String(record.clientAddress || record.client_address || '').trim(),
-        clientPhone: String(record.clientPhone || record.client_phone || '').trim(),
-        clientEmail: String(record.clientEmail || record.client_email || '').trim(),
-        clientNTN: String(record.clientNTN || record.client_ntn || '').trim(),
-        clientSTRN: String(record.clientSTRN || record.client_strn || '').trim(),
+        clientAddress: String(
+            record.clientAddress ||
+            record.client_address ||
+            detailsPayload.clientAddress ||
+            detailsPayload.client_address ||
+            ''
+        ).trim(),
+        clientPhone: String(
+            record.clientPhone ||
+            record.client_phone ||
+            detailsPayload.clientPhone ||
+            detailsPayload.client_phone ||
+            detailsPayload.contactNo ||
+            detailsPayload.phoneNo ||
+            ''
+        ).trim(),
+        clientEmail: String(
+            record.clientEmail ||
+            record.client_email ||
+            detailsPayload.clientEmail ||
+            detailsPayload.client_email ||
+            ''
+        ).trim(),
+        clientNTN: String(
+            record.clientNTN ||
+            record.client_ntn ||
+            detailsPayload.clientNTN ||
+            detailsPayload.client_ntn ||
+            detailsPayload.ntn ||
+            ''
+        ).trim(),
+        clientSTRN: String(
+            record.clientSTRN ||
+            record.client_strn ||
+            detailsPayload.clientSTRN ||
+            detailsPayload.client_strn ||
+            detailsPayload.strn ||
+            detailsPayload.salesTaxRegistrationNo ||
+            detailsPayload.salesTaxNo ||
+            ''
+        ).trim(),
         invoiceDate: record.invoiceDate || record.invoice_date || record.date || record.createdDate || record.created_at || '',
         dueDate: record.dueDate || record.due_date || record.duedate || '',
         month: record.month || detailsPayload.month || '',
