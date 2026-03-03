@@ -1,6 +1,60 @@
 // --- Supabase Integration ---
 var supabase = window.supabaseClient;
 
+function isUuidValue(value) {
+    const text = String(value || '').trim();
+    if (!text) return false;
+    return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(text);
+}
+
+function getInvoicesForPaymentContext() {
+    const fromWindow = Array.isArray(window.invoicesData) ? window.invoicesData : [];
+    if (fromWindow.length > 0) {
+        return fromWindow;
+    }
+
+    try {
+        const raw = localStorage.getItem(STORAGE_KEYS.INVOICES);
+        const parsed = raw ? JSON.parse(raw) : [];
+        return Array.isArray(parsed) ? parsed : [];
+    } catch (error) {
+        return [];
+    }
+}
+
+function resolvePaymentInvoiceContext(payment = {}) {
+    const lineItems = Array.isArray(payment.lineItems) ? payment.lineItems : [];
+    const firstLineItem = lineItems[0] || {};
+    const invoiceNo = String(payment.invoiceNo || payment.invoice_no || firstLineItem.invoiceNo || '').trim();
+    const invoices = getInvoicesForPaymentContext();
+
+    const matchedInvoice = invoices.find((invoice) => String(invoice?.invoiceNo || invoice?.invoice_no || '').trim() === invoiceNo) || {};
+    const invoiceDbId = String(matchedInvoice?.id || matchedInvoice?.invoice_id || '').trim();
+    const clientDbCandidates = [
+        matchedInvoice?.clientDbId,
+        matchedInvoice?.client_id,
+        matchedInvoice?.clientId,
+        payment?.clientDbId,
+        payment?.client_id,
+        payment?.clientId
+    ];
+    const clientDbId = clientDbCandidates.find((value) => isUuidValue(value)) || '';
+
+    return {
+        invoiceNo,
+        invoiceDbId: isUuidValue(invoiceDbId) ? invoiceDbId : '',
+        clientDbId: isUuidValue(clientDbId) ? String(clientDbId).trim() : '',
+        clientName: String(
+            payment.clientName ||
+            payment.client_name ||
+            firstLineItem.clientName ||
+            matchedInvoice?.clientName ||
+            matchedInvoice?.client_name ||
+            ''
+        ).trim()
+    };
+}
+
 function normalizePaymentRecord(record = {}) {
     const detailsPayload = record.details && typeof record.details === 'object' ? record.details : {};
     const parseArrayValue = (value) => {
@@ -28,6 +82,8 @@ function normalizePaymentRecord(record = {}) {
     const taxAmountRaw = Number(
         record.taxAmount ??
         record.tax_amount ??
+        record.taxDeduction ??
+        record.tax_deduction ??
         detailsPayload.taxAmount ??
         detailsPayload.tax_amount ??
         detailsPayload.taxDeduction ??
@@ -58,9 +114,9 @@ function normalizePaymentRecord(record = {}) {
     const derivedPaymentDate =
         record.paymentDate ||
         record.payment_date ||
+        record.date ||
         detailsPayload.paymentDate ||
         detailsPayload.payment_date ||
-        record.date ||
         record.created_at ||
         '';
 
@@ -81,7 +137,11 @@ function normalizePaymentRecord(record = {}) {
         invoiceCount: Number(record.invoiceCount ?? record.invoice_count ?? detailsPayload.invoiceCount ?? normalizedLineItems.length) || normalizedLineItems.length,
         invoiceNo: derivedInvoiceNo,
         invoiceMonth: String(record.invoiceMonth || record.invoice_month || '').trim(),
-        amount: Number(record.amount ?? detailsPayload.amount ?? totalAmount) || totalAmount
+        amount: Number(record.amount ?? detailsPayload.amount ?? totalAmount) || totalAmount,
+        clientId: String(record.clientId || record.client_id || '').trim(),
+        invoiceId: String(record.invoiceId || record.invoice_id || '').trim(),
+        paymentNo: String(record.paymentNo || record.paymentno || '').trim(),
+        taxDeduction: taxAmount
     };
 }
 
@@ -95,7 +155,46 @@ async function fetchPaymentsFromSupabase() {
         console.error('Supabase fetch error:', error);
         return [];
     }
-    return (data || []).map((payment) => normalizePaymentRecord(payment));
+
+    const [invoiceRows, clientRows] = await Promise.all([
+        (async () => {
+            const { data: invoices } = await selectWithRetry(() => supabase.from('invoices').select('id, invoice_no, client_id, client_name'));
+            return Array.isArray(invoices) ? invoices : [];
+        })(),
+        (async () => {
+            const { data: clients } = await selectWithRetry(() => supabase.from('clients').select('id, name, clientid, clientId'));
+            return Array.isArray(clients) ? clients : [];
+        })()
+    ]);
+
+    const invoiceById = new Map(invoiceRows.map((inv) => [String(inv.id || '').trim(), inv]));
+    const clientById = new Map(clientRows.map((client) => [String(client.id || '').trim(), client]));
+
+    return (data || []).map((row) => {
+        const normalized = normalizePaymentRecord(row);
+        const linkedInvoice = invoiceById.get(String(normalized.invoiceId || '').trim()) || {};
+        const linkedClient = clientById.get(String(normalized.clientId || linkedInvoice.client_id || '').trim()) || {};
+        const lineItems = Array.isArray(normalized.lineItems) ? normalized.lineItems : [];
+        const firstLineItem = lineItems[0] || {};
+
+        const invoiceNo = String(normalized.invoiceNo || linkedInvoice.invoice_no || firstLineItem.invoiceNo || '').trim();
+        const clientName = String(
+            normalized.clientName ||
+            linkedInvoice.client_name ||
+            linkedClient.name ||
+            firstLineItem.clientName ||
+            ''
+        ).trim();
+        const paymentDate = normalized.paymentDate || (String(normalized.created_at || '').split('T')[0] || '');
+
+        return {
+            ...normalized,
+            invoiceNo,
+            clientName,
+            paymentDate,
+            taxDeduction: Number(normalized.taxDeduction ?? normalized.taxAmount ?? 0) || 0
+        };
+    });
 }
 
 // Save (insert) a new payment to Supabase
@@ -114,6 +213,7 @@ async function savePaymentToSupabase(payment) {
         totalAmount: safePayment.totalAmount,
         taxRate: safePayment.taxRate,
         taxAmount: safePayment.taxAmount,
+        taxDeduction: safePayment.taxAmount,
         netAmount: safePayment.netAmount,
         lineItems: safePayment.lineItems,
         invoiceCount: safePayment.invoiceCount,
@@ -123,40 +223,51 @@ async function savePaymentToSupabase(payment) {
         clientName: safePayment.clientName
     };
 
+    const paymentContext = resolvePaymentInvoiceContext(safePayment);
+
     const candidatePayloads = [
+        {
+            paymentno: safePayment.paymentReference || safePayment.reference,
+            invoice_id: paymentContext.invoiceDbId,
+            client_id: paymentContext.clientDbId,
+            amount: safePayment.totalAmount,
+            method: safePayment.method,
+            date: safePayment.paymentDate || new Date().toISOString().split('T')[0],
+            reference: safePayment.reference || safePayment.paymentReference
+        },
         {
             payment_reference: safePayment.paymentReference || safePayment.reference,
             reference: safePayment.reference || safePayment.paymentReference,
-            client_name: safePayment.clientName,
+            client_name: paymentContext.clientName || safePayment.clientName,
             amount: safePayment.totalAmount,
-            payment_date: safePayment.paymentDate,
+            payment_date: safePayment.paymentDate || new Date().toISOString().split('T')[0],
             method: safePayment.method,
             status: safePayment.status,
-            invoice_no: safePayment.invoiceNo || firstLineItem?.invoiceNo || '',
+            invoice_no: paymentContext.invoiceNo || safePayment.invoiceNo || firstLineItem?.invoiceNo || '',
             details: baseDetails,
             notes: safePayment.notes
         },
         {
             paymentReference: safePayment.paymentReference || safePayment.reference,
             reference: safePayment.reference || safePayment.paymentReference,
-            clientName: safePayment.clientName,
+            clientName: paymentContext.clientName || safePayment.clientName,
             totalAmount: safePayment.totalAmount,
             taxRate: safePayment.taxRate,
             taxAmount: safePayment.taxAmount,
             netAmount: safePayment.netAmount,
             method: safePayment.method,
-            paymentDate: safePayment.paymentDate,
+            paymentDate: safePayment.paymentDate || new Date().toISOString().split('T')[0],
             status: safePayment.status,
             notes: safePayment.notes,
             lineItems: safePayment.lineItems,
             invoiceCount: safePayment.invoiceCount,
-            invoiceNo: safePayment.invoiceNo || firstLineItem?.invoiceNo || ''
+            invoiceNo: paymentContext.invoiceNo || safePayment.invoiceNo || firstLineItem?.invoiceNo || ''
         },
         {
             reference: safePayment.reference || safePayment.paymentReference,
-            client_name: safePayment.clientName,
+            client_name: paymentContext.clientName || safePayment.clientName,
             amount: safePayment.totalAmount,
-            payment_date: safePayment.paymentDate,
+            payment_date: safePayment.paymentDate || new Date().toISOString().split('T')[0],
             method: safePayment.method,
             status: safePayment.status
         }
