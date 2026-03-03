@@ -3,35 +3,83 @@ var supabase = window.supabaseClient;
 
 function normalizePaymentRecord(record = {}) {
     const detailsPayload = record.details && typeof record.details === 'object' ? record.details : {};
-    const lineItems = Array.isArray(record.lineItems)
-        ? record.lineItems
-        : (Array.isArray(record.line_items)
-            ? record.line_items
-            : (Array.isArray(detailsPayload.lineItems)
-                ? detailsPayload.lineItems
-                : (Array.isArray(detailsPayload.line_items) ? detailsPayload.line_items : [])));
+    const parseArrayValue = (value) => {
+        if (Array.isArray(value)) return value;
+        if (typeof value === 'string') {
+            try {
+                const parsed = JSON.parse(value);
+                return Array.isArray(parsed) ? parsed : [];
+            } catch (error) {
+                return [];
+            }
+        }
+        return [];
+    };
 
-    const totalAmount = Number(record.totalAmount ?? record.total_amount ?? record.amount ?? detailsPayload.totalAmount ?? 0) || 0;
-    const taxRate = Number(record.taxRate ?? record.tax_rate ?? detailsPayload.taxRate ?? 0) || 0;
-    const taxAmount = Number(record.taxAmount ?? record.tax_amount ?? detailsPayload.taxAmount ?? 0) || 0;
+    const lineItems = parseArrayValue(record.lineItems)
+        .concat(parseArrayValue(record.line_items))
+        .concat(parseArrayValue(detailsPayload.lineItems))
+        .concat(parseArrayValue(detailsPayload.line_items));
+    const normalizedLineItems = lineItems.filter((item) => item && typeof item === 'object');
+    const firstLineItem = normalizedLineItems[0] || {};
+
+    const totalAmount = Number(record.totalAmount ?? record.total_amount ?? record.amount ?? detailsPayload.totalAmount ?? detailsPayload.total_amount ?? 0) || 0;
+    const taxRateRaw = Number(record.taxRate ?? record.tax_rate ?? detailsPayload.taxRate ?? detailsPayload.tax_rate ?? 0) || 0;
+    const taxAmountRaw = Number(
+        record.taxAmount ??
+        record.tax_amount ??
+        detailsPayload.taxAmount ??
+        detailsPayload.tax_amount ??
+        detailsPayload.taxDeduction ??
+        detailsPayload.tax_deduction ??
+        0
+    ) || 0;
+    const taxRate = taxRateRaw || (totalAmount > 0 && taxAmountRaw > 0 ? (taxAmountRaw / totalAmount) * 100 : 0);
+    const taxAmount = taxAmountRaw || (totalAmount > 0 && taxRate > 0 ? (totalAmount * taxRate) / 100 : 0);
     const netAmount = Number(record.netAmount ?? record.net_amount ?? detailsPayload.netAmount ?? (totalAmount - taxAmount)) || 0;
+    const derivedClientName = String(
+        record.clientName ||
+        record.client_name ||
+        detailsPayload.clientName ||
+        detailsPayload.client_name ||
+        firstLineItem.clientName ||
+        firstLineItem.client_name ||
+        ''
+    ).trim();
+    const derivedInvoiceNo = String(
+        record.invoiceNo ||
+        record.invoice_no ||
+        detailsPayload.invoiceNo ||
+        detailsPayload.invoice_no ||
+        firstLineItem.invoiceNo ||
+        firstLineItem.invoice_no ||
+        ''
+    ).trim();
+    const derivedPaymentDate =
+        record.paymentDate ||
+        record.payment_date ||
+        detailsPayload.paymentDate ||
+        detailsPayload.payment_date ||
+        record.date ||
+        record.created_at ||
+        '';
 
     return {
         ...record,
         paymentReference: String(record.paymentReference || record.payment_reference || record.reference || '').trim(),
-        clientName: String(record.clientName || record.client_name || detailsPayload.clientName || '').trim(),
+        clientName: derivedClientName,
         totalAmount,
         taxRate,
         taxAmount,
         netAmount,
         method: String(record.method || detailsPayload.method || '').trim(),
-        paymentDate: record.paymentDate || record.payment_date || '',
+        paymentDate: derivedPaymentDate,
         reference: String(record.reference || record.paymentReference || record.payment_reference || '').trim(),
         status: String(record.status || detailsPayload.status || 'Completed').trim() || 'Completed',
         notes: String(record.notes || detailsPayload.notes || '').trim(),
-        lineItems,
-        invoiceCount: Number(record.invoiceCount ?? record.invoice_count ?? detailsPayload.invoiceCount ?? lineItems.length) || lineItems.length,
-        invoiceNo: String(record.invoiceNo || record.invoice_no || '').trim(),
+        lineItems: normalizedLineItems,
+        invoiceCount: Number(record.invoiceCount ?? record.invoice_count ?? detailsPayload.invoiceCount ?? normalizedLineItems.length) || normalizedLineItems.length,
+        invoiceNo: derivedInvoiceNo,
         invoiceMonth: String(record.invoiceMonth || record.invoice_month || '').trim(),
         amount: Number(record.amount ?? detailsPayload.amount ?? totalAmount) || totalAmount
     };
@@ -1741,7 +1789,10 @@ function displayPaymentsTable(payments) {
         
         // Handle line items or single invoice
         if (payment.lineItems && payment.lineItems.length > 0) {
-            const invoiceNumbers = payment.lineItems.map(item => item.invoiceNo).join(', ');
+            const invoiceNumbers = payment.lineItems
+                .map((item) => item?.invoiceNo || item?.invoice_no || '')
+                .filter((value) => String(value).trim() !== '')
+                .join(', ');
             html += `<td style="width: 14%; word-break: break-word;"><strong>${invoiceNumbers}</strong></td>`;
         } else {
             html += `<td style="width: 14%;">${payment.invoiceNo || '-'}</td>`;
