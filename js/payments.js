@@ -156,11 +156,10 @@ async function renderClientPayments(contentEl) {
         </div>
     `;
 
-    const currentMonth = new Date().toISOString().slice(0, 7);
     const monthFromEl = document.getElementById('payment-month-from');
     const monthToEl = document.getElementById('payment-month-to');
-    if (monthFromEl) monthFromEl.value = currentMonth;
-    if (monthToEl) monthToEl.value = currentMonth;
+    if (monthFromEl) monthFromEl.value = '';
+    if (monthToEl) monthToEl.value = '';
 
     const savedPayments = loadPaymentsFromStorage();
     if (savedPayments && savedPayments.length > 0) {
@@ -297,11 +296,9 @@ function resetPaymentFiltersWithAutoApply(triggerFilter = true) {
     const monthToEl = document.getElementById('payment-month-to');
     const methodEl = document.getElementById('filter-method');
     const searchEl = document.getElementById('search-payments');
-    const currentMonth = new Date().toISOString().slice(0, 7);
-    
     if (clientEl) clientEl.value = '';
-    if (monthFromEl) monthFromEl.value = currentMonth;
-    if (monthToEl) monthToEl.value = currentMonth;
+    if (monthFromEl) monthFromEl.value = '';
+    if (monthToEl) monthToEl.value = '';
     if (methodEl) methodEl.value = '';
     if (searchEl) searchEl.value = '';
     
@@ -354,11 +351,10 @@ function renderVendorPayments(contentEl) {
         displayVendorsTable(vendors);
     }
 
-    const currentMonth = new Date().toISOString().slice(0, 7);
     const monthFromEl = document.getElementById('vendor-payment-month-from');
     const monthToEl = document.getElementById('vendor-payment-month-to');
-    if (monthFromEl) monthFromEl.value = currentMonth;
-    if (monthToEl) monthToEl.value = currentMonth;
+    if (monthFromEl) monthFromEl.value = '';
+    if (monthToEl) monthToEl.value = '';
 
     const vendorPayments = loadVendorPaymentsFromStorage() || [];
     window.allVendorPayments = vendorPayments;
@@ -1381,7 +1377,6 @@ async function refreshClientPayments() {
         populatePaymentClientDropdown(mergedPayments);
         
         // Reset filters to default
-        const currentMonth = new Date().toISOString().slice(0, 7);
         const clientEl = document.getElementById('payment-client');
         const monthFromEl = document.getElementById('payment-month-from');
         const monthToEl = document.getElementById('payment-month-to');
@@ -1389,8 +1384,8 @@ async function refreshClientPayments() {
         const searchEl = document.getElementById('search-payments');
         
         if (clientEl) clientEl.value = '';
-        if (monthFromEl) monthFromEl.value = currentMonth;
-        if (monthToEl) monthToEl.value = currentMonth;
+        if (monthFromEl) monthFromEl.value = '';
+        if (monthToEl) monthToEl.value = '';
         if (methodEl) methodEl.value = '';
         if (searchEl) searchEl.value = '';
         
@@ -1881,11 +1876,9 @@ function resetVendorPaymentFilters(triggerFilter = true) {
     const monthToEl = document.getElementById('vendor-payment-month-to');
     const methodEl = document.getElementById('vendor-payment-method');
     const searchEl = document.getElementById('vendor-payment-search');
-    const currentMonth = new Date().toISOString().slice(0, 7);
-
     if (vendorEl) vendorEl.value = '';
-    if (monthFromEl) monthFromEl.value = currentMonth;
-    if (monthToEl) monthToEl.value = currentMonth;
+    if (monthFromEl) monthFromEl.value = '';
+    if (monthToEl) monthToEl.value = '';
     if (methodEl) methodEl.value = '';
     if (searchEl) searchEl.value = '';
 
