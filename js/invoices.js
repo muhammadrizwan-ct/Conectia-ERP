@@ -617,12 +617,25 @@ function handleInvoiceDeleteClick(invoiceNo, event) {
     deleteInvoice(invoiceNo);
 }
 
+function findInvoiceByLookupKey(invoiceLookupKey) {
+    const normalizedLookupKey = String(invoiceLookupKey || '').trim();
+    if (!normalizedLookupKey) {
+        return null;
+    }
+
+    return (invoicesData || []).find((invoice) => {
+        const invoiceNo = String(invoice?.invoiceNo || invoice?.invoice_no || '').trim();
+        const invoiceId = String(invoice?.id || '').trim();
+        return invoiceNo === normalizedLookupKey || invoiceId === normalizedLookupKey;
+    }) || null;
+}
+
 async function deleteInvoice(invoiceNo) {
     if (!ensureFeaturePermission('invoices', 'delete')) {
         return;
     }
 
-    const invoice = invoicesData.find(inv => inv.invoiceNo === invoiceNo);
+    const invoice = findInvoiceByLookupKey(invoiceNo);
     if (!invoice) {
         showNotification('Invoice not found', 'error');
         return;
@@ -1347,7 +1360,7 @@ function updatePagination(total, currentPage, limit, containerId, callback) {
 // View and print invoice PDF
 function viewInvoicePDF(invoiceNo) {
     // Find invoice data
-    const invoice = invoicesData.find(inv => inv.invoiceNo === invoiceNo) || 
+    const invoice = findInvoiceByLookupKey(invoiceNo) || 
                    { invoiceNo, clientName: 'Client', totalAmount: 0, status: 'Pending' };
     const invoiceWithClientDetails = {
         ...invoice,
@@ -1371,7 +1384,7 @@ function viewInvoicePDF(invoiceNo) {
 function downloadInvoicePDF(invoiceNo) {
     try {
         // Find invoice data
-        const invoice = invoicesData.find(inv => inv.invoiceNo === invoiceNo) || 
+        const invoice = findInvoiceByLookupKey(invoiceNo) || 
                        { invoiceNo, clientName: 'Client', totalAmount: 0, status: 'Pending' };
         const invoiceWithClientDetails = {
             ...invoice,
@@ -1431,7 +1444,7 @@ function downloadInvoicePDF(invoiceNo) {
 
 // Show invoice details modal
 function showInvoiceDetails(invoiceNo) {
-    const invoice = invoicesData.find(inv => inv.invoiceNo === invoiceNo);
+    const invoice = findInvoiceByLookupKey(invoiceNo);
     if (!invoice) {
         showNotification('Invoice not found', 'error');
         return;
@@ -2817,7 +2830,7 @@ function exportInvoices() {
 
 // Record payment for invoice
 function recordPaymentForInvoice(invoiceNo) {
-    const invoice = invoicesData.find(inv => inv.invoiceNo === invoiceNo);
+    const invoice = findInvoiceByLookupKey(invoiceNo);
     if (!invoice) {
         showNotification('Invoice not found', 'error');
         return;
