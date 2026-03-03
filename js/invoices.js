@@ -1996,14 +1996,18 @@ async function showGenerateInvoiceModal() {
         const clientOptionsHtml = Array.from(uniqueClientMap.values())
             .sort((a, b) => a.clientName.localeCompare(b.clientName))
             .map(({ clientName, clientRecord }) => {
-            const clientIdentifier = clientRecord ? String(clientRecord.id || clientRecord.client_id || clientRecord.clientId || '').trim() : '';
+            const clientDbId = clientRecord ? resolveInvoiceClientDbId(clientRecord) : '';
+            const clientBusinessId = clientRecord
+                ? String(clientRecord.clientId || clientRecord.clientid || clientRecord.client_id || '').trim()
+                : '';
+            const clientIdentifier = clientRecord ? String(clientRecord.id || clientRecord.client_id || clientBusinessId || '').trim() : '';
                 const defaultRate = resolveClientDefaultRateValue(clientRecord);
             const optionValue = clientIdentifier ? `id:${clientIdentifier}` : `name:${clientName}`;
                 if (clientIdentifier) {
                     window.invoiceClientRateMap.set(`id:${clientIdentifier}`, defaultRate);
                 }
                 window.invoiceClientRateMap.set(`name:${normalizeNameLower(clientName)}`, defaultRate);
-                return `<option value="${optionValue}" data-default-rate="${defaultRate}">${clientName}</option>`;
+                return `<option value="${optionValue}" data-default-rate="${defaultRate}" data-client-db-id="${clientDbId}" data-client-business-id="${clientBusinessId}" data-client-name="${clientName}">${clientName}</option>`;
         }).join('');
         
         // Get next invoice number
@@ -2132,6 +2136,7 @@ async function showGenerateInvoiceModal() {
         
         showModal('Generate Professional Invoice', content, async (modal) => {
             const selectedClientValue = document.getElementById('invoice-client').value;
+            const selectedClientOption = document.getElementById('invoice-client').selectedOptions?.[0] || null;
             const invoiceNoInput = String(document.getElementById('invoice-no').value || '').trim();
             const invoiceNo = invoiceNoInput || nextInvoiceNo;
             const month = document.getElementById('invoice-month').value;
@@ -2149,6 +2154,9 @@ async function showGenerateInvoiceModal() {
             const selectedById = selectedClientValue.startsWith('id:');
             const selectedClientId = selectedById ? selectedClientValue.slice(3) : '';
             const selectedClientName = selectedById ? '' : selectedClientValue.replace(/^name:/, '');
+            const selectedClientDbId = String(selectedClientOption?.dataset?.clientDbId || '').trim();
+            const selectedClientBusinessId = String(selectedClientOption?.dataset?.clientBusinessId || '').trim();
+            const selectedClientDisplayName = String(selectedClientOption?.dataset?.clientName || '').trim();
             
             // Get selected vehicles
             const selectedVehicles = [];
@@ -2170,13 +2178,14 @@ async function showGenerateInvoiceModal() {
             
             const client = selectedClientId
                 ? clientsList.find(c => {
-                    const dbId = String(c.id || c.client_id || '').trim();
+                    const dbId = resolveInvoiceClientDbId(c);
                     const businessId = String(c.clientId || '').trim();
                     return String(selectedClientId) === dbId || String(selectedClientId) === businessId;
                 })
-                : clientsList.find(c => normalizeName(c.name || c.clientName || c.companyName || c.businessName || '') === normalizeName(selectedClientName));
-            const resolvedClientName = normalizeName(client?.name || client?.clientName || selectedClientName || 'Client');
-            const resolvedClientId = selectedClientId || String(client?.id || client?.client_id || client?.clientId || '');
+                : clientsList.find(c => normalizeName(c.name || c.clientName || c.companyName || c.businessName || '') === normalizeName(selectedClientName || selectedClientDisplayName));
+            const resolvedClientName = normalizeName(client?.name || client?.clientName || selectedClientName || selectedClientDisplayName || 'Client');
+            const resolvedClientId = selectedClientBusinessId || selectedClientId || String(client?.clientId || client?.clientid || client?.id || client?.client_id || '');
+            const resolvedClientDbId = selectedClientDbId || resolveInvoiceClientDbId(client);
             const clientBillingDetails = getClientBillingDetails({
                 clientId: resolvedClientId,
                 clientName: resolvedClientName
@@ -2217,6 +2226,7 @@ async function showGenerateInvoiceModal() {
                 const newInvoice = {
                     invoiceNo,
                     clientId: resolvedClientId,
+                    clientDbId: resolvedClientDbId,
                     clientName: resolvedClientName,
                     ...clientBillingDetails,
                     invoiceDate,
@@ -2288,7 +2298,8 @@ async function loadClientVehiclesForInvoice() {
 
     const selectedById = selectedClientValue.startsWith('id:');
     const selectedClientId = selectedById ? selectedClientValue.slice(3) : '';
-    const selectedClientName = selectedById ? '' : selectedClientValue.replace(/^name:/, '');
+    const optionClientName = String(selectedClientOption?.dataset?.clientName || '').trim();
+    const selectedClientName = selectedById ? optionClientName : selectedClientValue.replace(/^name:/, '');
     const normalizeName = (value) => String(value || '').replace(/\s+/g, ' ').trim().toLowerCase();
 
     const clientRateMap = window.invoiceClientRateMap || new Map();
