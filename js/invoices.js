@@ -162,8 +162,8 @@ function normalizeInvoiceRecord(record = {}) {
         totalAmount,
         paidAmount,
         balance,
-        invoiceType: record.invoiceType || record.invoice_type || 'vehicle-details',
-        descriptionMode: record.descriptionMode || record.description_mode || 'categories-only',
+        invoiceType: record.invoiceType || record.invoice_type || detailsPayload.invoiceType || detailsPayload.invoice_type || 'vehicle-details',
+        descriptionMode: record.descriptionMode || record.description_mode || detailsPayload.descriptionMode || detailsPayload.description_mode || 'categories-only',
         createdDate: record.createdDate || record.created_date || record.created_at || '',
         items,
         status: String(record.status || 'Pending').trim() || 'Pending'
@@ -694,6 +694,10 @@ function loadVendorsForInvoices() {
 }
 
 function loadClientsFromStorage() {
+    if (Array.isArray(window.allClients) && window.allClients.length > 0) {
+        return window.allClients;
+    }
+
     try {
         const saved = localStorage.getItem(STORAGE_KEYS.CLIENTS);
         return saved ? JSON.parse(saved) : [];
@@ -764,51 +768,57 @@ function getClientBillingDetails(invoice = {}) {
     const normalizeName = (value) => String(value || '').replace(/\s+/g, ' ').trim().toLowerCase();
     const clients = loadClientsFromStorage();
     const invoiceClientId = String(invoice.clientId || '').trim();
+    const invoiceClientDbId = String(invoice.clientDbId || invoice.client_id || '').trim();
     const invoiceClientName = normalizeName(invoice.clientName || '');
 
     const matchedClient = (clients || []).find((client) => {
-        const clientId = String(client?.clientId || client?.id || '').trim();
+        const clientId = String(client?.clientId || client?.clientid || '').trim();
+        const clientDbId = String(client?.id || client?.client_id || '').trim();
         const clientName = normalizeName(client?.name || client?.clientName || client?.companyName || client?.businessName || '');
-        const idMatches = invoiceClientId && clientId && invoiceClientId === clientId;
+        const idMatches = (invoiceClientId && clientId && invoiceClientId === clientId)
+            || (invoiceClientId && clientDbId && invoiceClientId === clientDbId)
+            || (invoiceClientDbId && clientDbId && invoiceClientDbId === clientDbId)
+            || (invoiceClientDbId && clientId && invoiceClientDbId === clientId);
         const nameMatches = invoiceClientName && clientName && invoiceClientName === clientName;
         return idMatches || nameMatches;
     }) || {};
 
     return {
         clientAddress: String(
-            invoice.clientAddress ||
             matchedClient.address ||
             matchedClient.clientAddress ||
+            invoice.clientAddress ||
             ''
         ).trim(),
         clientPhone: String(
-            invoice.clientPhone ||
             matchedClient.phone ||
             matchedClient.mobile ||
             matchedClient.contactNo ||
             matchedClient.phoneNo ||
+            matchedClient.clientPhone ||
+            invoice.clientPhone ||
             ''
         ).trim(),
         clientEmail: String(
-            invoice.clientEmail ||
             matchedClient.email ||
             matchedClient.clientEmail ||
+            invoice.clientEmail ||
             ''
         ).trim(),
         clientNTN: String(
-            invoice.clientNTN ||
             matchedClient.ntn ||
             matchedClient.clientNTN ||
             matchedClient.NTN ||
+            invoice.clientNTN ||
             ''
         ).trim(),
         clientSTRN: String(
-            invoice.clientSTRN ||
             matchedClient.strn ||
             matchedClient.clientSTRN ||
             matchedClient.STRN ||
             matchedClient.salesTaxRegistrationNo ||
             matchedClient.salesTaxNo ||
+            invoice.clientSTRN ||
             ''
         ).trim()
     };
@@ -2309,10 +2319,24 @@ async function showGenerateInvoiceModal() {
             const resolvedClientName = normalizeName(client?.name || client?.clientName || selectedClientName || selectedClientDisplayName || 'Client');
             const resolvedClientId = selectedClientBusinessId || selectedClientId || String(client?.clientId || client?.clientid || client?.id || client?.client_id || '');
             const resolvedClientDbId = selectedClientDbId || resolveInvoiceClientDbId(client);
-            const clientBillingDetails = getClientBillingDetails({
+            const fallbackBillingDetails = getClientBillingDetails({
                 clientId: resolvedClientId,
+                clientDbId: resolvedClientDbId,
                 clientName: resolvedClientName
             });
+            const selectedClientBillingDetails = {
+                clientAddress: String(client?.address || client?.clientAddress || '').trim(),
+                clientPhone: String(client?.phone || client?.mobile || client?.contactNo || client?.phoneNo || client?.clientPhone || '').trim(),
+                clientEmail: String(client?.email || client?.clientEmail || '').trim(),
+                clientNTN: String(client?.ntn || client?.clientNTN || client?.NTN || '').trim(),
+                clientSTRN: String(client?.strn || client?.clientSTRN || client?.STRN || client?.salesTaxRegistrationNo || client?.salesTaxNo || '').trim()
+            };
+            const clientBillingDetails = {
+                ...fallbackBillingDetails,
+                ...Object.fromEntries(
+                    Object.entries(selectedClientBillingDetails).filter(([, value]) => String(value || '').trim() !== '')
+                )
+            };
             
             const allInvoices = await getAllInvoicesForValidation();
             const existingInvoiceNo = allInvoices.find(inv => inv.invoiceNo === invoiceNo);
