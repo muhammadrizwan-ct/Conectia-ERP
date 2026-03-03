@@ -868,11 +868,13 @@ function displayInvoices(invoices) {
     html += '</tr></thead><tbody>';
     
     invoices.forEach(inv => {
+        const invoiceNoText = String(inv?.invoiceNo || inv?.invoice_no || inv?.id || '').trim();
+        const escapedInvoiceNo = invoiceNoText.replace(/'/g, "\\'");
         const statusClass = `status-${inv.status?.toLowerCase() || 'pending'}`;
         const isOverdue = new Date(inv.dueDate) < new Date() && inv.status !== 'Paid';
         
         html += '<tr>';
-        html += `<td><strong>${inv.invoiceNo}</strong></td>`;
+        html += `<td><strong>${invoiceNoText || '-'}</strong></td>`;
         html += `<td>${formatDate(inv.invoiceDate)}</td>`;
         html += `<td>${inv.clientName || 'Unknown'}</td>`;
         html += `<td>${inv.month || '-'}</td>`;
@@ -885,24 +887,24 @@ function displayInvoices(invoices) {
         
         if (canManageInvoices || canManagePayments) {
             html += '<td>';
-            html += `<button class="btn btn-sm btn-secondary" onclick="handleInvoiceViewClick('${inv.invoiceNo.replace(/'/g, "\\'")}', event)" title="View/Print Invoice" style="width: 28px; height: 28px; padding: 0; margin-right: 4px;">`;
+            html += `<button class="btn btn-sm btn-secondary" onclick="handleInvoiceViewClick('${escapedInvoiceNo}', event)" title="View/Print Invoice" style="width: 28px; height: 28px; padding: 0; margin-right: 4px;">`;
             html += '<i class="fas fa-eye"></i>';
             html += '</button>';
             
             if (canDownloadInvoicePDF) {
-                html += `<button class="btn btn-sm btn-primary btn-export" onclick="handleInvoiceDownloadClick('${inv.invoiceNo.replace(/'/g, "\\'")}', event)" title="Download as PDF" aria-label="Download as PDF" style="margin-right: 4px;">`;
+                html += `<button class="btn btn-sm btn-primary btn-export" onclick="handleInvoiceDownloadClick('${escapedInvoiceNo}', event)" title="Download as PDF" aria-label="Download as PDF" style="margin-right: 4px;">`;
                 html += '<i class="fas fa-file-pdf"></i>';
                 html += '</button>';
             }
             
             if (inv.status !== 'Paid') {
-                html += `<button class="btn btn-sm btn-success" onclick="handleInvoicePaymentClick('${inv.invoiceNo.replace(/'/g, "\\'")}', event)" title="Record Payment">`;
+                html += `<button class="btn btn-sm btn-success" onclick="handleInvoicePaymentClick('${escapedInvoiceNo}', event)" title="Record Payment">`;
                 html += '<i class="fas fa-money-bill"></i>';
                 html += '</button>';
             }
             
             if (canManageInvoices && canDeleteInvoices) {
-                html += `<button class="btn btn-sm" onclick="handleInvoiceDeleteClick('${inv.invoiceNo.replace(/'/g, "\\'")}', event)" title="Delete Invoice" style="background: var(--danger); color: white; width: 28px; height: 28px; padding: 0; margin-left: 4px;">`;
+                html += `<button class="btn btn-sm" onclick="handleInvoiceDeleteClick('${escapedInvoiceNo}', event)" title="Delete Invoice" style="background: var(--danger); color: white; width: 28px; height: 28px; padding: 0; margin-left: 4px;">`;
                 html += '<i class="fas fa-trash"></i>';
                 html += '</button>';
             }
