@@ -1043,10 +1043,43 @@ function normalizeDailyExpenseRecord(record = {}) {
 function mergeExpenseByKey(normalizeFn, ...groups) {
     const byKey = new Map();
 
+    const getExpenseFingerprint = (item) => {
+        const employeeName = String(item.employeeName || '').trim().toLowerCase();
+        const expenseDate = String(item.expenseDate || '').trim();
+        const notes = String(item.notes || '').trim().toLowerCase();
+
+        if ('grossSalary' in item || 'netPayable' in item || 'taxDeduction' in item) {
+            return [
+                'salary',
+                employeeName,
+                expenseDate,
+                Number(item.grossSalary || 0).toFixed(2),
+                Number(item.taxDeduction || 0).toFixed(2),
+                Number(item.netPayable || 0).toFixed(2),
+                notes
+            ].join('|');
+        }
+
+        return [
+            'daily',
+            employeeName,
+            expenseDate,
+            Number(item.workingDays || 0).toFixed(2),
+            Number(item.travelPerDay || 0).toFixed(2),
+            Number(item.mealPerDay || 0).toFixed(2),
+            Number(item.fuelPerDay || 0).toFixed(2),
+            Number(item.otherPerDay || 0).toFixed(2),
+            Number(item.totalAmount || 0).toFixed(2),
+            notes
+        ].join('|');
+    };
+
     groups.flat().forEach((item) => {
         if (!item || typeof item !== 'object') return;
         const normalized = normalizeFn(item);
-        const key = String(normalized.supabaseId || normalized.id || '').trim();
+        const cloudId = String(normalized.supabaseId || (isUuidValue(normalized.id) ? normalized.id : '') || '').trim();
+        const fallbackKey = `fp:${getExpenseFingerprint(normalized)}`;
+        const key = cloudId ? `cloud:${cloudId}` : fallbackKey;
         if (!key) return;
 
         if (!byKey.has(key)) {
@@ -1183,29 +1216,74 @@ async function deleteDailyExpenseFromSupabase(expense) {
 async function syncUnsyncedSalaryExpensesToSupabase(expenses = []) {
     const source = (Array.isArray(expenses) ? expenses : []).map(normalizeSalaryExpenseRecord);
     const synced = [];
+    const seenKeys = new Set();
+
+    const fingerprint = (item) => [
+        'salary',
+        String(item.employeeName || '').trim().toLowerCase(),
+        String(item.expenseDate || '').trim(),
+        Number(item.grossSalary || 0).toFixed(2),
+        Number(item.taxDeduction || 0).toFixed(2),
+        Number(item.netPayable || 0).toFixed(2),
+        String(item.notes || '').trim().toLowerCase()
+    ].join('|');
+
     for (const item of source) {
-        if (isUuidValue(item.supabaseId || item.id)) {
-            synced.push(item);
+        let current = item;
+        if (!isUuidValue(item.supabaseId || item.id)) {
+            const saved = await saveSalaryExpenseToSupabase(item);
+            if (saved && typeof saved === 'object') {
+                current = saved;
+            }
+        }
+
+        const cloudId = String(current.supabaseId || (isUuidValue(current.id) ? current.id : '') || '').trim();
+        const key = cloudId ? `cloud:${cloudId}` : `fp:${fingerprint(current)}`;
+        if (seenKeys.has(key)) {
             continue;
         }
-        const saved = await saveSalaryExpenseToSupabase(item);
-        synced.push(saved || item);
+        seenKeys.add(key);
+        synced.push(current);
     }
-    return mergeExpenseByKey(normalizeSalaryExpenseRecord, source, synced);
+    return mergeExpenseByKey(normalizeSalaryExpenseRecord, synced);
 }
 
 async function syncUnsyncedDailyExpensesToSupabase(expenses = []) {
     const source = (Array.isArray(expenses) ? expenses : []).map(normalizeDailyExpenseRecord);
     const synced = [];
+    const seenKeys = new Set();
+
+    const fingerprint = (item) => [
+        'daily',
+        String(item.employeeName || '').trim().toLowerCase(),
+        String(item.expenseDate || '').trim(),
+        Number(item.workingDays || 0).toFixed(2),
+        Number(item.travelPerDay || 0).toFixed(2),
+        Number(item.mealPerDay || 0).toFixed(2),
+        Number(item.fuelPerDay || 0).toFixed(2),
+        Number(item.otherPerDay || 0).toFixed(2),
+        Number(item.totalAmount || 0).toFixed(2),
+        String(item.notes || '').trim().toLowerCase()
+    ].join('|');
+
     for (const item of source) {
-        if (isUuidValue(item.supabaseId || item.id)) {
-            synced.push(item);
+        let current = item;
+        if (!isUuidValue(item.supabaseId || item.id)) {
+            const saved = await saveDailyExpenseToSupabase(item);
+            if (saved && typeof saved === 'object') {
+                current = saved;
+            }
+        }
+
+        const cloudId = String(current.supabaseId || (isUuidValue(current.id) ? current.id : '') || '').trim();
+        const key = cloudId ? `cloud:${cloudId}` : `fp:${fingerprint(current)}`;
+        if (seenKeys.has(key)) {
             continue;
         }
-        const saved = await saveDailyExpenseToSupabase(item);
-        synced.push(saved || item);
+        seenKeys.add(key);
+        synced.push(current);
     }
-    return mergeExpenseByKey(normalizeDailyExpenseRecord, source, synced);
+    return mergeExpenseByKey(normalizeDailyExpenseRecord, synced);
 }
 
 function loadSalaryExpensesFromStorage() {
@@ -1562,7 +1640,9 @@ async function saveSalaryExpense(event) {
 
         const synced = await saveSalaryExpenseToSupabase(newExpense);
         if (synced && typeof synced === 'object') {
-            window.allSalaryExpenses = mergeExpenseByKey(normalizeSalaryExpenseRecord, window.allSalaryExpenses, [synced]);
+            window.allSalaryExpenses = (window.allSalaryExpenses || []).map((item) =>
+                String(item.id) === String(newExpense.id) ? synced : item
+            );
         }
     }
 
@@ -2041,7 +2121,9 @@ async function saveDailyExpense(event) {
 
         const synced = await saveDailyExpenseToSupabase(newExpense);
         if (synced && typeof synced === 'object') {
-            window.allDailyExpenses = mergeExpenseByKey(normalizeDailyExpenseRecord, window.allDailyExpenses, [synced]);
+            window.allDailyExpenses = (window.allDailyExpenses || []).map((item) =>
+                String(item.id) === String(newExpense.id) ? synced : item
+            );
         }
     }
 
