@@ -959,6 +959,7 @@ async function deleteInvoice(invoiceNo) {
     }
 
     if (isInvoiceFullyPaid(invoice)) {
+        alert('Paid invoices cannot be deleted.');
         showNotification('Paid invoices cannot be deleted', 'warning');
         return;
     }
@@ -1247,11 +1248,9 @@ function displayInvoices(invoices) {
             }
             
             if (canManageInvoices && canDeleteInvoices) {
-                if (!isInvoiceFullyPaid(inv)) {
-                    html += `<button class="btn btn-sm" onclick="handleInvoiceDeleteClick('${escapedInvoiceNo}', event)" title="Delete Invoice" style="background: var(--danger); color: white; width: 28px; height: 28px; padding: 0; margin-left: 4px;">`;
-                    html += '<i class="fas fa-trash"></i>';
-                    html += '</button>';
-                }
+                html += `<button class="btn btn-sm" onclick="handleInvoiceDeleteClick('${escapedInvoiceNo}', event)" title="Delete Invoice" style="background: var(--danger); color: white; width: 28px; height: 28px; padding: 0; margin-left: 4px;">`;
+                html += '<i class="fas fa-trash"></i>';
+                html += '</button>';
             }
             
             html += '</td>';
