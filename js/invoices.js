@@ -857,6 +857,27 @@ function findInvoiceByLookupKey(invoiceLookupKey) {
     }) || null;
 }
 
+function isInvoiceFullyPaid(invoice = {}) {
+    const status = String(invoice?.status || '').trim().toLowerCase();
+    if (status === 'paid') {
+        return true;
+    }
+
+    const totalAmount = Number(invoice?.totalAmount || 0);
+    const paidAmount = Number(invoice?.paidAmount || 0);
+    const balance = Number(invoice?.balance || 0);
+
+    if (totalAmount > 0 && paidAmount >= totalAmount) {
+        return true;
+    }
+
+    if (totalAmount > 0 && balance <= 0) {
+        return true;
+    }
+
+    return false;
+}
+
 async function deleteInvoiceFromSupabase(invoice = {}) {
     if (!supabase) {
         return { success: false, message: 'Database connection is not available' };
@@ -934,6 +955,11 @@ async function deleteInvoice(invoiceNo) {
     const invoice = findInvoiceByLookupKey(invoiceNo);
     if (!invoice) {
         showNotification('Invoice not found', 'error');
+        return;
+    }
+
+    if (isInvoiceFullyPaid(invoice)) {
+        showNotification('Paid invoices cannot be deleted', 'warning');
         return;
     }
     
@@ -1221,9 +1247,11 @@ function displayInvoices(invoices) {
             }
             
             if (canManageInvoices && canDeleteInvoices) {
-                html += `<button class="btn btn-sm" onclick="handleInvoiceDeleteClick('${escapedInvoiceNo}', event)" title="Delete Invoice" style="background: var(--danger); color: white; width: 28px; height: 28px; padding: 0; margin-left: 4px;">`;
-                html += '<i class="fas fa-trash"></i>';
-                html += '</button>';
+                if (!isInvoiceFullyPaid(inv)) {
+                    html += `<button class="btn btn-sm" onclick="handleInvoiceDeleteClick('${escapedInvoiceNo}', event)" title="Delete Invoice" style="background: var(--danger); color: white; width: 28px; height: 28px; padding: 0; margin-left: 4px;">`;
+                    html += '<i class="fas fa-trash"></i>';
+                    html += '</button>';
+                }
             }
             
             html += '</td>';
