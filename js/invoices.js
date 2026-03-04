@@ -1,5 +1,6 @@
 // --- Supabase Integration ---
 var supabase = window.supabaseClient;
+const DELETED_INVOICE_STORAGE_KEY = 'vts_deleted_invoices';
 
 function isUuidValue(value) {
     const text = String(value || '').trim();
@@ -93,6 +94,38 @@ function mergeUniqueInvoices(...groups) {
     });
 
     return merged;
+}
+
+function loadDeletedInvoiceNos() {
+    try {
+        const raw = localStorage.getItem(DELETED_INVOICE_STORAGE_KEY);
+        const parsed = raw ? JSON.parse(raw) : [];
+        return new Set((Array.isArray(parsed) ? parsed : []).map((value) => String(value || '').trim()).filter(Boolean));
+    } catch (error) {
+        return new Set();
+    }
+}
+
+function persistDeletedInvoiceNos(setValues) {
+    try {
+        localStorage.setItem(DELETED_INVOICE_STORAGE_KEY, JSON.stringify(Array.from(setValues || [])));
+    } catch (error) {
+        console.warn('Failed to persist deleted invoice numbers:', error);
+    }
+}
+
+function rememberDeletedInvoiceNo(invoiceNo) {
+    const normalized = String(invoiceNo || '').trim();
+    if (!normalized) return;
+    const setValues = loadDeletedInvoiceNos();
+    setValues.add(normalized);
+    persistDeletedInvoiceNos(setValues);
+}
+
+function isInvoiceMarkedDeleted(invoice = {}) {
+    const status = String(invoice?.status || '').trim().toLowerCase();
+    const details = invoice?.details && typeof invoice.details === 'object' ? invoice.details : {};
+    return status === 'deleted' || Boolean(details?.deleted);
 }
 
 function calculatePaidAmountsByInvoiceNo() {
@@ -245,7 +278,8 @@ function normalizeInvoiceRecord(record = {}) {
         descriptionMode: record.descriptionMode || record.description_mode || detailsPayload.descriptionMode || detailsPayload.description_mode || 'categories-only',
         createdDate: record.createdDate || record.created_date || record.created_at || '',
         items,
-        status: String(record.status || 'Pending').trim() || 'Pending'
+        status: String(record.status || 'Pending').trim() || 'Pending',
+        isDeleted: isInvoiceMarkedDeleted({ ...record, details: detailsPayload })
     };
 }
 
@@ -721,17 +755,28 @@ function renderVendorInvoicesTab(contentEl) {
 // Refresh invoices list from API
 async function refreshInvoicesList() {
     const cachedInvoices = loadCachedInvoices();
+    const deletedInvoiceNos = loadDeletedInvoiceNos();
 
     try {
         const supabaseInvoices = await fetchInvoicesFromSupabase();
-        invoicesData = sortInvoicesNewestFirst(enrichInvoicesAfterLoad(supabaseInvoices));
+        invoicesData = sortInvoicesNewestFirst(
+            enrichInvoicesAfterLoad(supabaseInvoices).filter((invoice) => {
+                const invoiceNo = String(invoice?.invoiceNo || '').trim();
+                return !deletedInvoiceNos.has(invoiceNo) && !isInvoiceMarkedDeleted(invoice);
+            })
+        );
         backfillInvoiceFieldsToSupabase(invoicesData).catch((error) => {
             console.warn('Invoice Supabase backfill skipped:', error?.message || error);
         });
         persistInvoiceCache(invoicesData);
         window.invoicesData = invoicesData;
     } catch (error) {
-        invoicesData = sortInvoicesNewestFirst(enrichInvoicesAfterLoad(cachedInvoices));
+        invoicesData = sortInvoicesNewestFirst(
+            enrichInvoicesAfterLoad(cachedInvoices).filter((invoice) => {
+                const invoiceNo = String(invoice?.invoiceNo || '').trim();
+                return !deletedInvoiceNos.has(invoiceNo) && !isInvoiceMarkedDeleted(invoice);
+            })
+        );
         window.invoicesData = invoicesData;
         console.error('Failed to load invoices from Supabase:', error);
     }
@@ -833,6 +878,34 @@ async function deleteInvoiceFromSupabase(invoice = {}) {
         if (!error) {
             return { success: true };
         }
+
+        const message = String(error.message || '').toLowerCase();
+        const likelyPermissionIssue = message.includes('permission') || message.includes('rls') || message.includes('policy') || message.includes('unauthorized');
+        if (likelyPermissionIssue) {
+            const details = invoice?.details && typeof invoice.details === 'object' ? invoice.details : {};
+            const softDeletePayload = {
+                status: 'Deleted',
+                details: {
+                    ...details,
+                    deleted: true,
+                    deletedAt: new Date().toISOString()
+                }
+            };
+
+            if (typeof updateInvoiceSupabaseByNumber === 'function') {
+                await updateInvoiceSupabaseByNumber(invoiceNo, softDeletePayload);
+                return { success: true, softDeleted: true };
+            }
+
+            const softDeleteResult = await supabase
+                .from('invoices')
+                .update(softDeletePayload)
+                .eq('invoice_no', invoiceNo);
+
+            if (!softDeleteResult.error) {
+                return { success: true, softDeleted: true };
+            }
+        }
     }
 
     if (invoiceId) {
@@ -879,6 +952,8 @@ async function deleteInvoice(invoiceNo) {
         showNotification(`Failed to delete invoice: ${deleteResult.message || 'Unknown error'}`, 'error');
         return;
     }
+
+    rememberDeletedInvoiceNo(invoiceNo);
     
     invoicesData = invoicesData.filter(inv => inv.invoiceNo !== invoiceNo);
     window.invoicesData = invoicesData;
@@ -886,7 +961,7 @@ async function deleteInvoice(invoiceNo) {
     displayInvoices(invoicesData);
     updateInvoicesSummary(invoicesData);
     
-    showNotification('Invoice deleted successfully!', 'success');
+    showNotification(deleteResult.softDeleted ? 'Invoice deleted successfully (soft delete)' : 'Invoice deleted successfully!', 'success');
 }
 
 
@@ -990,7 +1065,7 @@ async function getAllInvoicesForValidation() {
         const key = inv?.invoiceNo || JSON.stringify(inv);
         if (seen.has(key)) return false;
         seen.add(key);
-        return true;
+        return !isInvoiceMarkedDeleted(inv);
     });
 }
 
