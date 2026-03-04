@@ -1,29 +1,236 @@
 // --- Supabase Integration ---
 var supabase = window.supabaseClient;
 
-// Fetch all ledger entries from Supabase
-async function fetchLedgerFromSupabase() {
-    const selectWithRetry = window.executeSupabaseSelect || (async (queryFn) => queryFn());
-    const { data, error } = await selectWithRetry(() => supabase
-        .from('ledger')
-        .select('*'));
-    if (error) {
-        console.error('Supabase fetch error:', error);
+function readStorageArray(storageKey) {
+    try {
+        const raw = localStorage.getItem(storageKey);
+        const parsed = raw ? JSON.parse(raw) : [];
+        return Array.isArray(parsed) ? parsed : [];
+    } catch (error) {
+        console.error('Failed to read local storage:', storageKey, error);
         return [];
     }
-    return data || [];
 }
 
-// Save (insert) a new ledger entry to Supabase
-async function saveLedgerToSupabase(entry) {
-    const { data, error } = await supabase
-        .from('ledger')
-        .insert([entry]);
+function normalizePaymentScope(value, fallback = 'client') {
+    const normalized = String(value || '').trim().toLowerCase();
+    if (normalized === 'vendor') return 'vendor';
+    if (normalized === 'client') return 'client';
+    return fallback;
+}
+
+function normalizeClientPaymentForLedger(record = {}) {
+    const details = record.details && typeof record.details === 'object' ? record.details : {};
+    const parseArrayValue = (value) => {
+        if (Array.isArray(value)) return value;
+        if (typeof value === 'string') {
+            try {
+                const parsed = JSON.parse(value);
+                return Array.isArray(parsed) ? parsed : [];
+            } catch (error) {
+                return [];
+            }
+        }
+        return [];
+    };
+
+    const lineItems = parseArrayValue(record.lineItems)
+        .concat(parseArrayValue(record.line_items))
+        .concat(parseArrayValue(details.lineItems))
+        .concat(parseArrayValue(details.line_items))
+        .filter((item) => item && typeof item === 'object');
+
+    const firstLineItem = lineItems[0] || {};
+    const invoiceAmount = Number(
+        record.invoiceAmount ??
+        record.invoice_amount ??
+        details.invoiceAmount ??
+        details.invoice_amount ??
+        record.totalAmount ??
+        record.total_amount ??
+        record.amount ??
+        0
+    ) || 0;
+
+    const taxRate = Number(
+        record.taxRate ??
+        record.tax_rate ??
+        record.taxDeductionPercentage ??
+        record.tax_deduction_percentage ??
+        details.taxRate ??
+        details.tax_rate ??
+        details.taxDeductionPercentage ??
+        details.tax_deduction_percentage ??
+        0
+    ) || 0;
+
+    const taxAmountRaw = Number(
+        record.taxAmount ??
+        record.tax_amount ??
+        record.taxDeduction ??
+        record.tax_deduction ??
+        details.taxAmount ??
+        details.tax_amount ??
+        details.taxDeduction ??
+        details.tax_deduction ??
+        0
+    );
+
+    const taxAmount = Number.isFinite(taxAmountRaw)
+        ? taxAmountRaw
+        : (invoiceAmount > 0 && taxRate > 0 ? (invoiceAmount * taxRate) / 100 : 0);
+
+    const netAmountRaw = Number(
+        record.netAmount ??
+        record.net_amount ??
+        details.netAmount ??
+        details.net_amount ??
+        record.paidAmount ??
+        record.paid_amount ??
+        Math.max(invoiceAmount - taxAmount, 0)
+    );
+
+    const netAmount = Number.isFinite(netAmountRaw) ? netAmountRaw : Math.max(invoiceAmount - taxAmount, 0);
+    const paymentDate = String(record.paymentDate || record.payment_date || record.date || record.created_at || '').trim();
+
+    return {
+        ...record,
+        paymentScope: normalizePaymentScope(record.paymentScope || record.payment_scope, 'client'),
+        clientName: String(record.clientName || record.client_name || details.clientName || details.client_name || firstLineItem.clientName || '').trim(),
+        paymentDate,
+        month: String(record.month || record.paymentMonth || record.invoiceMonth || record.invoice_month || '').trim(),
+        lineItems,
+        invoiceNo: String(record.invoiceNo || record.invoice_no || details.invoiceNo || details.invoice_no || firstLineItem.invoiceNo || '').trim(),
+        reference: String(record.reference || record.paymentReference || record.payment_reference || '').trim(),
+        paymentReference: String(record.paymentReference || record.payment_reference || record.reference || '').trim(),
+        method: String(record.method || details.method || '').trim(),
+        invoiceAmount,
+        totalAmount: netAmount,
+        paidAmount: netAmount,
+        taxRate,
+        taxAmount,
+        taxDeduction: taxAmount,
+        netAmount
+    };
+}
+
+function isClientPaymentForLedger(record = {}) {
+    const normalized = normalizeClientPaymentForLedger(record);
+    const scope = normalizePaymentScope(normalized.paymentScope || normalized.payment_scope, 'client');
+    const hasVendorIdentity = String(normalized.vendorName || normalized.vendor_name || '').trim() !== '';
+    return scope !== 'vendor' && !hasVendorIdentity;
+}
+
+function normalizeVendorPaymentForLedger(record = {}) {
+    const amount = Number(record.amount ?? record.gross_amount ?? record.invoice_amount ?? 0) || 0;
+    const taxDeduction = Number(record.taxDeduction ?? record.tax_deduction ?? 0) || 0;
+    const netAmount = Number(record.netAmount ?? record.net_amount ?? Math.max(amount - taxDeduction, 0)) || Math.max(amount - taxDeduction, 0);
+
+    return {
+        ...record,
+        vendorName: String(record.vendorName || record.vendor_name || '').trim(),
+        paymentDate: String(record.paymentDate || record.payment_date || record.date || '').trim(),
+        invoiceNo: String(record.invoiceNo || record.invoice_no || '').trim(),
+        invoiceMonth: String(record.invoiceMonth || record.invoice_month || '').trim(),
+        method: String(record.method || '').trim(),
+        reference: String(record.reference || record.paymentReference || record.payment_reference || '').trim(),
+        amount,
+        taxDeduction,
+        netAmount,
+        paymentScope: 'vendor'
+    };
+}
+
+function normalizeSalaryExpenseForLedger(record = {}) {
+    const grossSalary = Number(record.grossSalary ?? record.gross_salary ?? 0) || 0;
+    const taxDeduction = Number(record.taxDeduction ?? record.tax_deduction ?? 0) || 0;
+    const netPayable = Number(record.netPayable ?? record.net_payable ?? Math.max(grossSalary - taxDeduction, 0)) || Math.max(grossSalary - taxDeduction, 0);
+
+    return {
+        ...record,
+        employeeName: String(record.employeeName || record.employee_name || '').trim(),
+        expenseDate: String(record.expenseDate || record.expense_date || '').trim(),
+        grossSalary,
+        taxDeduction,
+        netPayable
+    };
+}
+
+function normalizeDailyExpenseForLedger(record = {}) {
+    return {
+        ...record,
+        employeeName: String(record.employeeName || record.employee_name || '').trim(),
+        expenseDate: String(record.expenseDate || record.expense_date || '').trim(),
+        totalAmount: Number(record.totalAmount ?? record.total_amount ?? 0) || 0
+    };
+}
+
+function normalizeInvoiceForLedger(invoice = {}) {
+    const details = invoice.details && typeof invoice.details === 'object' ? invoice.details : {};
+    return {
+        ...invoice,
+        invoiceNo: String(invoice.invoiceNo || invoice.invoice_no || details.invoiceNo || details.invoice_no || '').trim(),
+        clientName: String(invoice.clientName || invoice.client_name || details.clientName || details.client_name || '').trim(),
+        invoiceDate: String(invoice.invoiceDate || invoice.invoice_date || invoice.date || '').trim(),
+        month: String(invoice.month || invoice.invoiceMonth || invoice.invoice_month || details.month || details.invoiceMonth || '').trim(),
+        totalAmount: Number(invoice.totalAmount ?? invoice.total_amount ?? invoice.total ?? details.totalAmount ?? details.total_amount ?? 0) || 0
+    };
+}
+
+async function fetchTableRows(tableName) {
+    if (!supabase) return [];
+    const selectWithRetry = window.executeSupabaseSelect || (async (queryFn) => queryFn());
+    const { data, error } = await selectWithRetry(() => supabase.from(tableName).select('*'));
     if (error) {
-        console.error('Supabase insert error:', error);
-        return null;
+        console.error(`Supabase fetch error (${tableName}):`, error);
+        return [];
     }
-    return data && data[0];
+    return Array.isArray(data) ? data : [];
+}
+
+async function fetchVendorLedgerData() {
+    const localVendors = readStorageArray(STORAGE_KEYS.VENDORS);
+    const localVendorInvoices = readStorageArray(STORAGE_KEYS.VENDOR_INVOICES);
+    const localVendorPayments = readStorageArray(STORAGE_KEYS.VENDOR_PAYMENTS).map(normalizeVendorPaymentForLedger);
+    const cloudVendorPayments = (await fetchTableRows('vendor_payments')).map(normalizeVendorPaymentForLedger);
+
+    return {
+        vendors: localVendors,
+        vendorInvoices: localVendorInvoices,
+        vendorPayments: dedupeByKey([...cloudVendorPayments, ...localVendorPayments], (payment) => {
+            return payment.reference || payment.id || payment.supabaseId || `${payment.vendorName}|${payment.invoiceNo}|${payment.paymentDate}|${payment.amount}`;
+        })
+    };
+}
+
+async function fetchBankLedgerData() {
+    const { payments } = await fetchLedgerData();
+    const localVendorPayments = readStorageArray(STORAGE_KEYS.VENDOR_PAYMENTS).map(normalizeVendorPaymentForLedger);
+    const localSalaryExpenses = readStorageArray(STORAGE_KEYS.SALARY_EXPENSES).map(normalizeSalaryExpenseForLedger);
+    const localDailyExpenses = readStorageArray(STORAGE_KEYS.DAILY_EXPENSES).map(normalizeDailyExpenseForLedger);
+
+    const [cloudVendorPaymentsRaw, cloudSalaryRaw, cloudDailyRaw] = await Promise.all([
+        fetchTableRows('vendor_payments'),
+        fetchTableRows('salary_expenses'),
+        fetchTableRows('daily_expenses')
+    ]);
+
+    const cloudVendorPayments = cloudVendorPaymentsRaw.map(normalizeVendorPaymentForLedger);
+    const cloudSalaryExpenses = cloudSalaryRaw.map(normalizeSalaryExpenseForLedger);
+    const cloudDailyExpenses = cloudDailyRaw.map(normalizeDailyExpenseForLedger);
+
+    return {
+        payments,
+        vendorPayments: dedupeByKey([...cloudVendorPayments, ...localVendorPayments], (payment) => {
+            return payment.reference || payment.id || payment.supabaseId || `${payment.vendorName}|${payment.invoiceNo}|${payment.paymentDate}|${payment.amount}`;
+        }),
+        salaryExpenses: dedupeByKey([...cloudSalaryExpenses, ...localSalaryExpenses], (expense) => {
+            return expense.supabaseId || expense.id || `${expense.employeeName}|${expense.expenseDate}|${expense.grossSalary}|${expense.netPayable}`;
+        }),
+        dailyExpenses: dedupeByKey([...cloudDailyExpenses, ...localDailyExpenses], (expense) => {
+            return expense.supabaseId || expense.id || `${expense.employeeName}|${expense.expenseDate}|${expense.totalAmount}`;
+        })
+    };
 }
 // Ledger Module
 async function loadLedger(initialTab = 'client') {
@@ -38,17 +245,7 @@ async function loadLedger(initialTab = 'client') {
 
 async function renderLedgerTab(contentEl, tab) {
     if (!contentEl) return;
-    // Only fetch from Supabase
-    let ledgerEntries = [];
-    try {
-        ledgerEntries = await fetchLedgerFromSupabase();
-    } catch (error) {
-        ledgerEntries = [];
-        console.error('Error loading ledger from Supabase:', error);
-    }
-    // You may want to filter or display ledgerEntries here
-    // For now, just display all
-    displayLedgerTable(ledgerEntries, []);
+    await setActiveLedgerTab(tab || 'client');
 }
 
 async function loadClientLedger() {
@@ -203,13 +400,7 @@ async function renderVendorLedger(contentEl) {
     if (monthFromInput) monthFromInput.value = currentMonth;
     if (monthToInput) monthToInput.value = currentMonth;
 
-    const vendors = loadJSONFromStorage(STORAGE_KEYS.VENDORS);
-    const vendorInvoices = loadJSONFromStorage(STORAGE_KEYS.VENDOR_INVOICES);
-    const vendorPayments = loadJSONFromStorage(STORAGE_KEYS.VENDOR_PAYMENTS);
-    window.vendorLedgerState = { vendors, vendorInvoices, vendorPayments };
-
-    populateLedgerVendorOptions(vendors, vendorInvoices, vendorPayments);
-    filterVendorLedger();
+    await refreshVendorLedger(false);
 }
 
 async function renderBankLedger(contentEl) {
@@ -262,12 +453,16 @@ async function fetchLedgerData() {
     ]);
 
     const apiClients = normalizeArrayResponse(clientsResult.status === 'fulfilled' ? clientsResult.value : [], 'clients');
-    const apiInvoices = normalizeArrayResponse(invoicesResult.status === 'fulfilled' ? invoicesResult.value : [], 'invoices');
-    const apiPayments = normalizeArrayResponse(paymentsResult.status === 'fulfilled' ? paymentsResult.value : [], 'payments');
+    const apiInvoices = normalizeArrayResponse(invoicesResult.status === 'fulfilled' ? invoicesResult.value : [], 'invoices').map(normalizeInvoiceForLedger);
+    const apiPayments = normalizeArrayResponse(paymentsResult.status === 'fulfilled' ? paymentsResult.value : [], 'payments')
+        .map(normalizeClientPaymentForLedger)
+        .filter(isClientPaymentForLedger);
 
-    const storedClients = loadJSONFromStorage(STORAGE_KEYS.CLIENTS);
-    const storedInvoices = loadJSONFromStorage(STORAGE_KEYS.INVOICES);
-    const storedPayments = loadJSONFromStorage(STORAGE_KEYS.PAYMENTS);
+    const storedClients = readStorageArray(STORAGE_KEYS.CLIENTS);
+    const storedInvoices = readStorageArray(STORAGE_KEYS.INVOICES).map(normalizeInvoiceForLedger);
+    const storedPayments = readStorageArray(STORAGE_KEYS.PAYMENTS)
+        .map(normalizeClientPaymentForLedger)
+        .filter(isClientPaymentForLedger);
 
     return {
         clients: dedupeByKey([...apiClients, ...storedClients], (c) => c.id || c.clientId || c.name),
@@ -282,16 +477,16 @@ function normalizeArrayResponse(response, key) {
     return [];
 }
 
-
-// Supabase replaces localStorage for ledger
-async function loadJSONFromStorage(storageKey) {
-    // Ignore storageKey, always fetch from Supabase
-    return await fetchLedgerFromSupabase();
+function loadJSONFromStorage(storageKey) {
+    return readStorageArray(storageKey);
 }
 
-async function saveJSONToStorage(entry) {
-    // Insert single ledger entry to Supabase
-    return await saveLedgerToSupabase(entry);
+function saveJSONToStorage(storageKey, value) {
+    try {
+        localStorage.setItem(storageKey, JSON.stringify(Array.isArray(value) ? value : []));
+    } catch (error) {
+        console.error('Failed to save local storage:', storageKey, error);
+    }
 }
 
 function dedupeByKey(items, getKey) {
@@ -392,14 +587,12 @@ function filterVendorLedger() {
     displayVendorLedgerTable(rows);
 }
 
-function refreshVendorLedger() {
+async function refreshVendorLedger(showToast = true) {
     const previousVendor = document.getElementById('ledger-vendor')?.value || '';
     const previousMonthFrom = document.getElementById('ledger-month-from')?.value || '';
     const previousMonthTo = document.getElementById('ledger-month-to')?.value || '';
 
-    const vendors = loadJSONFromStorage(STORAGE_KEYS.VENDORS);
-    const vendorInvoices = loadJSONFromStorage(STORAGE_KEYS.VENDOR_INVOICES);
-    const vendorPayments = loadJSONFromStorage(STORAGE_KEYS.VENDOR_PAYMENTS);
+    const { vendors, vendorInvoices, vendorPayments } = await fetchVendorLedgerData();
     window.vendorLedgerState = { vendors, vendorInvoices, vendorPayments };
 
     populateLedgerVendorOptions(vendors, vendorInvoices, vendorPayments);
@@ -413,17 +606,16 @@ function refreshVendorLedger() {
     if (monthToEl) monthToEl.value = previousMonthTo;
 
     filterVendorLedger();
-    showNotification('Vendor ledger refreshed successfully', 'success');
+    if (showToast) {
+        showNotification('Vendor ledger refreshed successfully', 'success');
+    }
 }
 
 async function refreshBankLedger(showToast = true) {
     const previousMonthFrom = document.getElementById('ledger-month-from')?.value || '';
     const previousMonthTo = document.getElementById('ledger-month-to')?.value || '';
 
-    const { payments } = await fetchLedgerData();
-    const salaryExpenses = loadJSONFromStorage(STORAGE_KEYS.SALARY_EXPENSES);
-    const dailyExpenses = loadJSONFromStorage(STORAGE_KEYS.DAILY_EXPENSES);
-    const vendorPayments = loadJSONFromStorage(STORAGE_KEYS.VENDOR_PAYMENTS);
+    const { payments, salaryExpenses, dailyExpenses, vendorPayments } = await fetchBankLedgerData();
 
     window.bankLedgerState = {
         payments,
@@ -513,7 +705,7 @@ function buildBankLedgerRows() {
         const paymentDate = getVendorPaymentDate(payment);
         if (!matchesMonthRangeFilter(paymentDate, payment.invoiceMonth, monthFrom, monthTo)) return;
 
-        const amount = Number(payment.amount ?? payment.netAmount) || 0;
+        const amount = Number(payment.netAmount ?? payment.net_amount ?? payment.amount) || 0;
         const vendorName = payment.vendorName || 'Vendor';
         const paymentType = payment.method || 'N/A';
         const reference = payment.reference || '-';
