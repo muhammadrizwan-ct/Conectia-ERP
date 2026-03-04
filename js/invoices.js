@@ -97,12 +97,12 @@ function mergeUniqueInvoices(...groups) {
 
 function normalizeInvoiceRecord(record = {}) {
     const invoiceNo = String(record.invoiceNo || record.invoice_no || record.invoiceno || record.id || '').trim();
-    const subtotal = toSafeNumber(record.subtotal ?? record.sub_total, 0);
-    const taxAmount = toSafeNumber(record.taxAmount ?? record.tax_amount, 0);
-    const totalAmount = toSafeNumber(record.totalAmount ?? record.total_amount ?? record.total, subtotal + taxAmount);
-    const paidAmount = toSafeNumber(record.paidAmount ?? record.paid_amount, 0);
-    const balance = toSafeNumber(record.balance, Math.max(totalAmount - paidAmount, 0));
     const detailsPayload = record.details && typeof record.details === 'object' ? record.details : {};
+    const subtotal = toSafeNumber(record.subtotal ?? record.sub_total ?? detailsPayload.subtotal ?? detailsPayload.sub_total, 0);
+    const taxAmount = toSafeNumber(record.taxAmount ?? record.tax_amount ?? detailsPayload.taxAmount ?? detailsPayload.tax_amount, 0);
+    const totalAmount = toSafeNumber(record.totalAmount ?? record.total_amount ?? record.total, subtotal + taxAmount);
+    const paidAmount = toSafeNumber(record.paidAmount ?? record.paid_amount ?? detailsPayload.paidAmount ?? detailsPayload.paid_amount, 0);
+    const balance = toSafeNumber(record.balance ?? detailsPayload.balance, Math.max(totalAmount - paidAmount, 0));
     const items = Array.isArray(record.items)
         ? record.items
         : (Array.isArray(detailsPayload.items) ? detailsPayload.items : []);
@@ -155,8 +155,8 @@ function normalizeInvoiceRecord(record = {}) {
         ).trim(),
         invoiceDate: record.invoiceDate || record.invoice_date || record.date || record.createdDate || record.created_at || '',
         dueDate: record.dueDate || record.due_date || record.duedate || '',
-        month: record.month || detailsPayload.month || '',
-        vehicleCount: toSafeNumber(record.vehicleCount ?? record.vehicle_count, items.length),
+        month: String(record.month || record.invoiceMonth || record.invoice_month || detailsPayload.month || detailsPayload.invoiceMonth || detailsPayload.invoice_month || '').trim(),
+        vehicleCount: toSafeNumber(record.vehicleCount ?? record.vehicle_count ?? detailsPayload.vehicleCount ?? detailsPayload.vehicle_count, items.length),
         subtotal,
         taxAmount,
         totalAmount,
@@ -1257,6 +1257,17 @@ function resolveMonthIndex(value) {
     const text = String(value || '').trim();
     if (!text) return 0;
 
+    const normalized = text.toLowerCase();
+    const monthNames = [
+        'january', 'february', 'march', 'april', 'may', 'june',
+        'july', 'august', 'september', 'october', 'november', 'december'
+    ];
+    for (let index = 0; index < monthNames.length; index += 1) {
+        if (normalized.startsWith(monthNames[index])) {
+            return index + 1;
+        }
+    }
+
     if (/^\d{4}-\d{2}$/.test(text)) {
         const monthNum = Number(text.slice(5, 7));
         return monthNum >= 1 && monthNum <= 12 ? monthNum : 0;
@@ -1267,16 +1278,17 @@ function resolveMonthIndex(value) {
         return parsedDate.getMonth() + 1;
     }
 
-    const monthNames = [
-        'january', 'february', 'march', 'april', 'may', 'june',
-        'july', 'august', 'september', 'october', 'november', 'december'
-    ];
-    const monthIndex = monthNames.findIndex((monthName) => monthName === text.toLowerCase());
+    const monthIndex = monthNames.findIndex((monthName) => monthName === normalized);
     return monthIndex >= 0 ? monthIndex + 1 : 0;
 }
 
 function getInvoiceMonthLabel(invoice = {}) {
-    const monthIndex = resolveMonthIndex(invoice.month || invoice.invoiceMonth || invoice.invoiceDate);
+    const rawMonth = String(invoice.month || invoice.invoiceMonth || '').trim();
+    if (rawMonth) {
+        return rawMonth;
+    }
+
+    const monthIndex = resolveMonthIndex(invoice.invoiceDate);
     if (!monthIndex) return '-';
     return new Date(2000, monthIndex - 1, 1).toLocaleString('en-US', { month: 'long' });
 }
