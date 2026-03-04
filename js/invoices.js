@@ -812,6 +812,45 @@ function findInvoiceByLookupKey(invoiceLookupKey) {
     }) || null;
 }
 
+async function deleteInvoiceFromSupabase(invoice = {}) {
+    if (!supabase) {
+        return { success: false, message: 'Database connection is not available' };
+    }
+
+    const invoiceNo = String(invoice.invoiceNo || invoice.invoice_no || '').trim();
+    const invoiceId = String(invoice.id || '').trim();
+
+    if (!invoiceNo && !invoiceId) {
+        return { success: false, message: 'Missing invoice identifier for delete' };
+    }
+
+    if (invoiceNo) {
+        const { error } = await supabase
+            .from('invoices')
+            .delete()
+            .eq('invoice_no', invoiceNo);
+
+        if (!error) {
+            return { success: true };
+        }
+    }
+
+    if (invoiceId) {
+        const { error } = await supabase
+            .from('invoices')
+            .delete()
+            .eq('id', invoiceId);
+
+        if (!error) {
+            return { success: true };
+        }
+
+        return { success: false, message: error.message || 'Failed to delete invoice' };
+    }
+
+    return { success: false, message: 'Failed to delete invoice' };
+}
+
 async function deleteInvoice(invoiceNo) {
     if (!ensureFeaturePermission('invoices', 'delete')) {
         return;
@@ -834,10 +873,16 @@ async function deleteInvoice(invoiceNo) {
     if (!confirmed) {
         return;
     }
+
+    const deleteResult = await deleteInvoiceFromSupabase(invoice);
+    if (!deleteResult.success) {
+        showNotification(`Failed to delete invoice: ${deleteResult.message || 'Unknown error'}`, 'error');
+        return;
+    }
     
     invoicesData = invoicesData.filter(inv => inv.invoiceNo !== invoiceNo);
     window.invoicesData = invoicesData;
-    saveInvoicesToStorage();
+    persistInvoiceCache(invoicesData);
     displayInvoices(invoicesData);
     updateInvoicesSummary(invoicesData);
     
