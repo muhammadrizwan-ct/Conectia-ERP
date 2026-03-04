@@ -3712,9 +3712,23 @@ async function syncClientInvoiceStatusesToSupabase(invoices) {
     for (const invoice of invoices) {
         const invoiceNo = String(invoice?.invoiceNo || '').trim();
         if (!invoiceNo) continue;
+        const buildPayload = typeof window.buildInvoiceSupabaseUpdatePayload === 'function'
+            ? window.buildInvoiceSupabaseUpdatePayload
+            : null;
+        const updateByNumber = typeof window.updateInvoiceSupabaseByNumber === 'function'
+            ? window.updateInvoiceSupabaseByNumber
+            : null;
+
+        if (buildPayload && updateByNumber) {
+            const payload = buildPayload(invoice);
+            await updateByNumber(invoiceNo, payload);
+            continue;
+        }
 
         const mergedDetails = {
             ...(invoice?.details && typeof invoice.details === 'object' ? invoice.details : {}),
+            month: String(invoice?.month || '').trim(),
+            vehicleCount: Number(invoice?.vehicleCount || 0),
             paidAmount: Number(invoice?.paidAmount || 0),
             balance: Number(invoice?.balance || 0)
         };
@@ -3724,11 +3738,7 @@ async function syncClientInvoiceStatusesToSupabase(invoices) {
             details: mergedDetails
         };
 
-        const { error } = await supabase
-            .from('invoices')
-            .update(payload)
-            .eq('invoice_no', invoiceNo);
-
+        const { error } = await supabase.from('invoices').update(payload).eq('invoice_no', invoiceNo);
         if (error) {
             console.warn(`Failed to sync invoice status for ${invoiceNo}:`, error.message || error);
         }

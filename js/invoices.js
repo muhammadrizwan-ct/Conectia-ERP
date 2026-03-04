@@ -183,6 +183,77 @@ async function fetchInvoicesFromSupabase() {
     return (data || []).map((invoice) => normalizeInvoiceRecord(invoice));
 }
 
+function buildInvoiceSupabaseUpdatePayload(invoice = {}) {
+    const details = invoice?.details && typeof invoice.details === 'object' ? invoice.details : {};
+
+    const mergedDetails = {
+        ...details,
+        month: String(invoice.month || details.month || '').trim(),
+        vehicleCount: Number(invoice.vehicleCount || details.vehicleCount || details.vehicle_count || 0),
+        paidAmount: Number(invoice.paidAmount || details.paidAmount || details.paid_amount || 0),
+        balance: Number(invoice.balance || details.balance || 0)
+    };
+
+    return {
+        details: mergedDetails,
+        month: mergedDetails.month,
+        vehicle_count: mergedDetails.vehicleCount,
+        paid_amount: mergedDetails.paidAmount,
+        balance: mergedDetails.balance,
+        status: String(invoice.status || 'Pending')
+    };
+}
+
+async function updateInvoiceSupabaseByNumber(invoiceNo, payload) {
+    const normalizedInvoiceNo = String(invoiceNo || '').trim();
+    if (!normalizedInvoiceNo || !payload || typeof payload !== 'object') {
+        return;
+    }
+
+    const attemptPayload = { ...payload };
+    let attempts = 0;
+
+    while (attempts < 16 && Object.keys(attemptPayload).length > 0) {
+        const { error } = await supabase
+            .from('invoices')
+            .update(attemptPayload)
+            .eq('invoice_no', normalizedInvoiceNo);
+
+        if (!error) {
+            return;
+        }
+
+        const message = String(error.message || '');
+        const missingColumnMatch = message.match(/Could not find the '([^']+)' column/i);
+        if (!missingColumnMatch) {
+            console.warn(`Failed to sync invoice ${normalizedInvoiceNo} to Supabase:`, error.message || error);
+            return;
+        }
+
+        const missingColumn = missingColumnMatch[1];
+        const matchingKey = Object.keys(attemptPayload).find((key) => key.toLowerCase() === missingColumn.toLowerCase());
+        if (!matchingKey) {
+            return;
+        }
+
+        delete attemptPayload[matchingKey];
+        attempts += 1;
+    }
+}
+
+async function backfillInvoiceFieldsToSupabase(invoices = []) {
+    if (!supabase || !Array.isArray(invoices) || invoices.length === 0) {
+        return;
+    }
+
+    for (const invoice of invoices) {
+        const invoiceNo = String(invoice?.invoiceNo || '').trim();
+        if (!invoiceNo) continue;
+        const payload = buildInvoiceSupabaseUpdatePayload(invoice);
+        await updateInvoiceSupabaseByNumber(invoiceNo, payload);
+    }
+}
+
 // Save (insert) a new invoice to Supabase
 async function saveInvoiceToSupabase(invoice) {
     if (!invoice || typeof invoice !== 'object') {
@@ -554,6 +625,9 @@ async function refreshInvoicesList() {
     try {
         const supabaseInvoices = await fetchInvoicesFromSupabase();
         invoicesData = sortInvoicesNewestFirst(supabaseInvoices);
+        backfillInvoiceFieldsToSupabase(invoicesData).catch((error) => {
+            console.warn('Invoice Supabase backfill skipped:', error?.message || error);
+        });
         persistInvoiceCache(invoicesData);
         window.invoicesData = invoicesData;
     } catch (error) {
@@ -3124,3 +3198,6 @@ window.updateSelectedCount = updateSelectedCount;
 window.updateInvoicePreview = updateInvoicePreview;
 window.getNextInvoiceNumber = getNextInvoiceNumber;
 window.saveInvoicesToStorage = saveInvoicesToStorage;
+window.buildInvoiceSupabaseUpdatePayload = buildInvoiceSupabaseUpdatePayload;
+window.updateInvoiceSupabaseByNumber = updateInvoiceSupabaseByNumber;
+window.backfillInvoiceFieldsToSupabase = backfillInvoiceFieldsToSupabase;
