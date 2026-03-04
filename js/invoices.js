@@ -95,6 +95,65 @@ function mergeUniqueInvoices(...groups) {
     return merged;
 }
 
+function calculatePaidAmountsByInvoiceNo() {
+    const paidByInvoice = {};
+    try {
+        const rawPayments = localStorage.getItem(STORAGE_KEYS.PAYMENTS);
+        const payments = rawPayments ? JSON.parse(rawPayments) : [];
+
+        (Array.isArray(payments) ? payments : []).forEach((payment) => {
+            if (Array.isArray(payment?.lineItems) && payment.lineItems.length > 0) {
+                payment.lineItems.forEach((item) => {
+                    const invoiceNo = String(item?.invoiceNo || '').trim();
+                    if (!invoiceNo) return;
+                    paidByInvoice[invoiceNo] = (paidByInvoice[invoiceNo] || 0) + (Number(item?.allocatedAmount) || 0);
+                });
+                return;
+            }
+
+            const invoiceNo = String(payment?.invoiceNo || '').trim();
+            if (!invoiceNo) return;
+            paidByInvoice[invoiceNo] = (paidByInvoice[invoiceNo] || 0) + (Number(payment?.totalAmount || payment?.amount) || 0);
+        });
+    } catch (error) {
+        return paidByInvoice;
+    }
+
+    return paidByInvoice;
+}
+
+function enrichInvoicesAfterLoad(invoices = []) {
+    const paidByInvoice = calculatePaidAmountsByInvoiceNo();
+
+    return (Array.isArray(invoices) ? invoices : []).map((invoice) => {
+        const normalized = normalizeInvoiceRecord(invoice);
+        const items = Array.isArray(normalized.items) ? normalized.items : [];
+        const invoiceNo = String(normalized.invoiceNo || '').trim();
+
+        const derivedMonth = String(normalized.month || '').trim() ||
+            (normalized.invoiceDate ? new Date(normalized.invoiceDate).toLocaleString('en-US', { month: 'long' }) : '');
+        const derivedVehicleCount = Number(normalized.vehicleCount || 0) > 0
+            ? Number(normalized.vehicleCount || 0)
+            : items.length;
+
+        const paidFromPayments = Number(paidByInvoice[invoiceNo] || 0);
+        const basePaid = Number(normalized.paidAmount || 0);
+        const paidAmount = Math.max(basePaid, paidFromPayments, 0);
+        const totalAmount = Number(normalized.totalAmount || 0);
+        const balance = Math.max(totalAmount - paidAmount, 0);
+        const status = balance <= 0 ? 'Paid' : paidAmount > 0 ? 'Partial' : (normalized.status || 'Pending');
+
+        return {
+            ...normalized,
+            month: derivedMonth,
+            vehicleCount: derivedVehicleCount,
+            paidAmount,
+            balance,
+            status
+        };
+    });
+}
+
 function normalizeInvoiceRecord(record = {}) {
     const invoiceNo = String(record.invoiceNo || record.invoice_no || record.invoiceno || record.id || '').trim();
     const detailsPayload = (() => {
@@ -665,14 +724,14 @@ async function refreshInvoicesList() {
 
     try {
         const supabaseInvoices = await fetchInvoicesFromSupabase();
-        invoicesData = sortInvoicesNewestFirst(supabaseInvoices);
+        invoicesData = sortInvoicesNewestFirst(enrichInvoicesAfterLoad(supabaseInvoices));
         backfillInvoiceFieldsToSupabase(invoicesData).catch((error) => {
             console.warn('Invoice Supabase backfill skipped:', error?.message || error);
         });
         persistInvoiceCache(invoicesData);
         window.invoicesData = invoicesData;
     } catch (error) {
-        invoicesData = sortInvoicesNewestFirst(cachedInvoices);
+        invoicesData = sortInvoicesNewestFirst(enrichInvoicesAfterLoad(cachedInvoices));
         window.invoicesData = invoicesData;
         console.error('Failed to load invoices from Supabase:', error);
     }
