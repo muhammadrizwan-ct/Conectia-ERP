@@ -823,7 +823,7 @@ function displayBankLedgerTable(rows) {
     html += '<th style="width: 14%;">Balance</th>';
     html += '</tr></thead></table></div>';
 
-    html += '<div style="max-height: 520px; overflow-y: auto; border-top: 1px solid var(--gray-200); border-bottom: 1px solid var(--gray-200);">';
+    html += '<div style="height: 396px; overflow-y: auto; overflow-x: hidden; border-top: 1px solid var(--gray-200); border-bottom: 1px solid var(--gray-200);">';
     html += '<div class="table-responsive"><table class="data-table" style="margin-bottom: 0; table-layout: fixed; width: 100%;"><tbody>';
 
     rows.forEach((row) => {
@@ -977,7 +977,7 @@ function displayVendorLedgerTable(rows) {
     html += '<th style="width: 13%;">Balance</th>';
     html += '</tr></thead></table></div>';
 
-    html += '<div style="max-height: 520px; overflow-y: auto; border-top: 1px solid var(--gray-200); border-bottom: 1px solid var(--gray-200);">';
+    html += '<div style="height: 396px; overflow-y: auto; overflow-x: hidden; border-top: 1px solid var(--gray-200); border-bottom: 1px solid var(--gray-200);">';
     html += '<div class="table-responsive"><table class="data-table" style="margin-bottom: 0; table-layout: fixed; width: 100%;"><tbody>';
 
     rows.forEach((row) => {
@@ -1213,7 +1213,7 @@ function displayLedgerTable(invoices, payments) {
     html += '</tr></thead></table></div>';
 
     // Scrollable body
-    html += '<div style="max-height: 520px; overflow-y: auto; border-top: 1px solid var(--gray-200); border-bottom: 1px solid var(--gray-200);">';
+    html += '<div style="height: 396px; overflow-y: auto; overflow-x: hidden; border-top: 1px solid var(--gray-200); border-bottom: 1px solid var(--gray-200);">';
     html += '<div class="table-responsive"><table class="data-table" style="margin-bottom: 0; table-layout: fixed; width: 100%;"><tbody>';
     
     rows.forEach((row) => {
