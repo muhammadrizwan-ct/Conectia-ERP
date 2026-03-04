@@ -996,10 +996,223 @@ function getDailyExpensesStorageKey() {
     return (typeof STORAGE_KEYS !== 'undefined' && STORAGE_KEYS.DAILY_EXPENSES) ? STORAGE_KEYS.DAILY_EXPENSES : 'vts_daily_expenses';
 }
 
+function escapeSingleQuoteAttr(value) {
+    return String(value || '').replace(/\\/g, '\\\\').replace(/'/g, "\\'");
+}
+
+function normalizeSalaryExpenseRecord(record = {}) {
+    const grossSalary = Number(record.grossSalary ?? record.gross_salary ?? 0) || 0;
+    const taxDeduction = Number(record.taxDeduction ?? record.tax_deduction ?? 0) || 0;
+    const netPayable = Number(record.netPayable ?? record.net_payable ?? Math.max(grossSalary - taxDeduction, 0)) || Math.max(grossSalary - taxDeduction, 0);
+
+    return {
+        ...record,
+        id: record.id || Date.now(),
+        supabaseId: String(record.supabaseId || record.supabase_id || (isUuidValue(record.id) ? record.id : '') || '').trim(),
+        employeeName: String(record.employeeName || record.employee_name || '').trim(),
+        expenseDate: String(record.expenseDate || record.expense_date || '').trim(),
+        basicSalary: Number(record.basicSalary ?? record.basic_salary ?? 0) || 0,
+        houseAllowance: Number(record.houseAllowance ?? record.house_allowance ?? 0) || 0,
+        transportAllowance: Number(record.transportAllowance ?? record.transport_allowance ?? 0) || 0,
+        otherAllowance: Number(record.otherAllowance ?? record.other_allowance ?? 0) || 0,
+        grossSalary,
+        taxDeduction,
+        netPayable,
+        notes: getExpenseNotes(record)
+    };
+}
+
+function normalizeDailyExpenseRecord(record = {}) {
+    return {
+        ...record,
+        id: record.id || Date.now(),
+        supabaseId: String(record.supabaseId || record.supabase_id || (isUuidValue(record.id) ? record.id : '') || '').trim(),
+        employeeName: String(record.employeeName || record.employee_name || '').trim(),
+        expenseDate: String(record.expenseDate || record.expense_date || '').trim(),
+        workingDays: Number(record.workingDays ?? record.working_days ?? 0) || 0,
+        travelPerDay: Number(record.travelPerDay ?? record.travel_per_day ?? 0) || 0,
+        mealPerDay: Number(record.mealPerDay ?? record.meal_per_day ?? 0) || 0,
+        fuelPerDay: Number(record.fuelPerDay ?? record.fuel_per_day ?? 0) || 0,
+        otherPerDay: Number(record.otherPerDay ?? record.other_per_day ?? 0) || 0,
+        totalAmount: Number(record.totalAmount ?? record.total_amount ?? 0) || 0,
+        notes: getExpenseNotes(record),
+        note: getExpenseNotes(record)
+    };
+}
+
+function mergeExpenseByKey(normalizeFn, ...groups) {
+    const byKey = new Map();
+
+    groups.flat().forEach((item) => {
+        if (!item || typeof item !== 'object') return;
+        const normalized = normalizeFn(item);
+        const key = String(normalized.supabaseId || normalized.id || '').trim();
+        if (!key) return;
+
+        if (!byKey.has(key)) {
+            byKey.set(key, normalized);
+            return;
+        }
+
+        byKey.set(key, {
+            ...byKey.get(key),
+            ...normalized,
+            id: normalized.id || byKey.get(key).id,
+            supabaseId: normalized.supabaseId || byKey.get(key).supabaseId
+        });
+    });
+
+    return Array.from(byKey.values()).sort((a, b) => new Date(b.expenseDate || 0) - new Date(a.expenseDate || 0));
+}
+
+async function fetchSalaryExpensesFromSupabase() {
+    const selectWithRetry = window.executeSupabaseSelect || (async (queryFn) => queryFn());
+    const { data, error } = await selectWithRetry(() => supabase.from('salary_expenses').select('*'));
+    if (error) {
+        console.error('Supabase salary expenses fetch error:', error);
+        return [];
+    }
+    return (Array.isArray(data) ? data : []).map(normalizeSalaryExpenseRecord);
+}
+
+async function fetchDailyExpensesFromSupabase() {
+    const selectWithRetry = window.executeSupabaseSelect || (async (queryFn) => queryFn());
+    const { data, error } = await selectWithRetry(() => supabase.from('daily_expenses').select('*'));
+    if (error) {
+        console.error('Supabase daily expenses fetch error:', error);
+        return [];
+    }
+    return (Array.isArray(data) ? data : []).map(normalizeDailyExpenseRecord);
+}
+
+async function saveSalaryExpenseToSupabase(expense) {
+    const item = normalizeSalaryExpenseRecord(expense || {});
+    const payload = {
+        employee_name: item.employeeName,
+        expense_date: item.expenseDate || new Date().toISOString().split('T')[0],
+        basic_salary: item.basicSalary,
+        house_allowance: item.houseAllowance,
+        transport_allowance: item.transportAllowance,
+        other_allowance: item.otherAllowance,
+        gross_salary: item.grossSalary,
+        tax_deduction: item.taxDeduction,
+        net_payable: item.netPayable,
+        notes: item.notes
+    };
+
+    const cloudId = String(item.supabaseId || item.id || '').trim();
+    if (isUuidValue(cloudId)) {
+        const { data, error } = await supabase.from('salary_expenses').update(payload).eq('id', cloudId).select('*').single();
+        if (error) {
+            console.error('Supabase salary expense update error:', error);
+            window.lastSalaryExpenseSaveError = error;
+            return null;
+        }
+        window.lastSalaryExpenseSaveError = null;
+        return normalizeSalaryExpenseRecord(data || { ...payload, id: cloudId });
+    }
+
+    const { data, error } = await supabase.from('salary_expenses').insert([payload]).select('*').single();
+    if (error) {
+        console.error('Supabase salary expense insert error:', error);
+        window.lastSalaryExpenseSaveError = error;
+        return null;
+    }
+    window.lastSalaryExpenseSaveError = null;
+    return normalizeSalaryExpenseRecord(data || payload);
+}
+
+async function saveDailyExpenseToSupabase(expense) {
+    const item = normalizeDailyExpenseRecord(expense || {});
+    const payload = {
+        employee_name: item.employeeName,
+        expense_date: item.expenseDate || new Date().toISOString().split('T')[0],
+        working_days: item.workingDays,
+        travel_per_day: item.travelPerDay,
+        meal_per_day: item.mealPerDay,
+        fuel_per_day: item.fuelPerDay,
+        other_per_day: item.otherPerDay,
+        total_amount: item.totalAmount,
+        notes: item.notes
+    };
+
+    const cloudId = String(item.supabaseId || item.id || '').trim();
+    if (isUuidValue(cloudId)) {
+        const { data, error } = await supabase.from('daily_expenses').update(payload).eq('id', cloudId).select('*').single();
+        if (error) {
+            console.error('Supabase daily expense update error:', error);
+            window.lastDailyExpenseSaveError = error;
+            return null;
+        }
+        window.lastDailyExpenseSaveError = null;
+        return normalizeDailyExpenseRecord(data || { ...payload, id: cloudId });
+    }
+
+    const { data, error } = await supabase.from('daily_expenses').insert([payload]).select('*').single();
+    if (error) {
+        console.error('Supabase daily expense insert error:', error);
+        window.lastDailyExpenseSaveError = error;
+        return null;
+    }
+    window.lastDailyExpenseSaveError = null;
+    return normalizeDailyExpenseRecord(data || payload);
+}
+
+async function deleteSalaryExpenseFromSupabase(expense) {
+    const cloudId = String(expense?.supabaseId || expense?.id || '').trim();
+    if (!isUuidValue(cloudId)) return true;
+    const { error } = await supabase.from('salary_expenses').delete().eq('id', cloudId);
+    if (error) {
+        console.error('Supabase salary expense delete error:', error);
+        return false;
+    }
+    return true;
+}
+
+async function deleteDailyExpenseFromSupabase(expense) {
+    const cloudId = String(expense?.supabaseId || expense?.id || '').trim();
+    if (!isUuidValue(cloudId)) return true;
+    const { error } = await supabase.from('daily_expenses').delete().eq('id', cloudId);
+    if (error) {
+        console.error('Supabase daily expense delete error:', error);
+        return false;
+    }
+    return true;
+}
+
+async function syncUnsyncedSalaryExpensesToSupabase(expenses = []) {
+    const source = (Array.isArray(expenses) ? expenses : []).map(normalizeSalaryExpenseRecord);
+    const synced = [];
+    for (const item of source) {
+        if (isUuidValue(item.supabaseId || item.id)) {
+            synced.push(item);
+            continue;
+        }
+        const saved = await saveSalaryExpenseToSupabase(item);
+        synced.push(saved || item);
+    }
+    return mergeExpenseByKey(normalizeSalaryExpenseRecord, source, synced);
+}
+
+async function syncUnsyncedDailyExpensesToSupabase(expenses = []) {
+    const source = (Array.isArray(expenses) ? expenses : []).map(normalizeDailyExpenseRecord);
+    const synced = [];
+    for (const item of source) {
+        if (isUuidValue(item.supabaseId || item.id)) {
+            synced.push(item);
+            continue;
+        }
+        const saved = await saveDailyExpenseToSupabase(item);
+        synced.push(saved || item);
+    }
+    return mergeExpenseByKey(normalizeDailyExpenseRecord, source, synced);
+}
+
 function loadSalaryExpensesFromStorage() {
     try {
         const saved = localStorage.getItem(getSalaryExpensesStorageKey());
-        return saved ? JSON.parse(saved) : [];
+        const parsed = saved ? JSON.parse(saved) : [];
+        return (Array.isArray(parsed) ? parsed : []).map((item) => normalizeSalaryExpenseRecord(item));
     } catch (error) {
         console.error('Failed to load salary expenses from localStorage:', error);
         return [];
@@ -1008,7 +1221,9 @@ function loadSalaryExpensesFromStorage() {
 
 function saveSalaryExpensesToStorage() {
     try {
-        localStorage.setItem(getSalaryExpensesStorageKey(), JSON.stringify(window.allSalaryExpenses || []));
+        const normalized = (window.allSalaryExpenses || []).map((item) => normalizeSalaryExpenseRecord(item));
+        window.allSalaryExpenses = normalized;
+        localStorage.setItem(getSalaryExpensesStorageKey(), JSON.stringify(normalized));
     } catch (error) {
         console.error('Failed to save salary expenses to localStorage:', error);
     }
@@ -1017,7 +1232,8 @@ function saveSalaryExpensesToStorage() {
 function loadDailyExpensesFromStorage() {
     try {
         const saved = localStorage.getItem(getDailyExpensesStorageKey());
-        return saved ? JSON.parse(saved) : [];
+        const parsed = saved ? JSON.parse(saved) : [];
+        return (Array.isArray(parsed) ? parsed : []).map((item) => normalizeDailyExpenseRecord(item));
     } catch (error) {
         console.error('Failed to load daily expenses from localStorage:', error);
         return [];
@@ -1026,7 +1242,9 @@ function loadDailyExpensesFromStorage() {
 
 function saveDailyExpensesToStorage() {
     try {
-        localStorage.setItem(getDailyExpensesStorageKey(), JSON.stringify(window.allDailyExpenses || []));
+        const normalized = (window.allDailyExpenses || []).map((item) => normalizeDailyExpenseRecord(item));
+        window.allDailyExpenses = normalized;
+        localStorage.setItem(getDailyExpensesStorageKey(), JSON.stringify(normalized));
     } catch (error) {
         console.error('Failed to save daily expenses to localStorage:', error);
     }
@@ -1072,6 +1290,26 @@ function renderSalaryExpensesTab(contentEl) {
     `;
 
     displaySalaryExpensesTable(expenses);
+
+    (async () => {
+        try {
+            const syncedLocal = await syncUnsyncedSalaryExpensesToSupabase(window.allSalaryExpenses || []);
+            window.allSalaryExpenses = syncedLocal;
+            saveSalaryExpensesToStorage();
+
+            const cloud = await fetchSalaryExpensesFromSupabase();
+            if (Array.isArray(cloud) && cloud.length > 0) {
+                window.allSalaryExpenses = mergeExpenseByKey(normalizeSalaryExpenseRecord, window.allSalaryExpenses || [], cloud);
+                saveSalaryExpensesToStorage();
+            }
+
+            if (window.paymentActiveTab === 'expenses' && window.expenseSubTab === 'salary') {
+                displaySalaryExpensesTable(window.allSalaryExpenses || []);
+            }
+        } catch (error) {
+            console.error('Failed syncing salary expenses with Supabase:', error);
+        }
+    })();
 }
 
 function displaySalaryExpensesTable(expenses) {
@@ -1102,6 +1340,7 @@ function displaySalaryExpensesTable(expenses) {
 
     expenses.forEach((expense) => {
         totalNet += Number(expense.netPayable) || 0;
+        const rowId = escapeSingleQuoteAttr(expense.id);
         html += '<tr>';
         html += `<td>${expense.expenseDate || '-'}</td>`;
         html += `<td>${expense.employeeName || '-'}</td>`;
@@ -1110,12 +1349,12 @@ function displaySalaryExpensesTable(expenses) {
         html += `<td style="text-align: right; font-weight: 700; color: var(--success);">${formatPKR(Number(expense.netPayable) || 0)}</td>`;
         html += '<td>';
         html += `<div style="display: flex; gap: 6px; white-space: nowrap;">`;
-        html += `<button class="btn btn-sm btn-secondary" onclick="showSalaryExpenseDetailsModal(${expense.id})" title="View Details" style="width: 28px; height: 28px; padding: 0;"><i class="fas fa-eye"></i></button>`;
+        html += `<button class="btn btn-sm btn-secondary" onclick="showSalaryExpenseDetailsModal('${rowId}')" title="View Details" style="width: 28px; height: 28px; padding: 0;"><i class="fas fa-eye"></i></button>`;
         if (canEditData) {
-            html += `<button class="btn btn-sm btn-primary" onclick="showEditSalaryExpenseModal(${expense.id})" title="Edit Expense" style="width: 28px; height: 28px; padding: 0;"><i class="fas fa-edit"></i></button>`;
+            html += `<button class="btn btn-sm btn-primary" onclick="showEditSalaryExpenseModal('${rowId}')" title="Edit Expense" style="width: 28px; height: 28px; padding: 0;"><i class="fas fa-edit"></i></button>`;
         }
         if (canDeleteData) {
-            html += `<button class="btn btn-sm" style="background: var(--danger); color: white; width: 28px; height: 28px; padding: 0;" onclick="deleteSalaryExpense(${expense.id})" title="Delete Expense"><i class="fas fa-trash"></i></button>`;
+            html += `<button class="btn btn-sm" style="background: var(--danger); color: white; width: 28px; height: 28px; padding: 0;" onclick="deleteSalaryExpense('${rowId}')" title="Delete Expense"><i class="fas fa-trash"></i></button>`;
         }
         html += '</div>';
         html += '</td>';
@@ -1262,7 +1501,7 @@ function calculateExpenseTotals() {
     return { grossSalary, taxDeduction, netPayable, basicSalary, houseAllowance, transportAllowance, otherAllowance };
 }
 
-function saveSalaryExpense(event) {
+async function saveSalaryExpense(event) {
     event.preventDefault();
 
     const expenseId = document.getElementById('salary-expense-id')?.value;
@@ -1309,12 +1548,22 @@ function saveSalaryExpense(event) {
             ...payload,
             id: window.allSalaryExpenses[index].id
         };
+
+        const synced = await saveSalaryExpenseToSupabase(window.allSalaryExpenses[index]);
+        if (synced && typeof synced === 'object') {
+            window.allSalaryExpenses[index] = synced;
+        }
     } else {
         const newExpense = {
             id: Date.now(),
             ...payload
         };
         window.allSalaryExpenses.unshift(newExpense);
+
+        const synced = await saveSalaryExpenseToSupabase(newExpense);
+        if (synced && typeof synced === 'object') {
+            window.allSalaryExpenses = mergeExpenseByKey(normalizeSalaryExpenseRecord, window.allSalaryExpenses, [synced]);
+        }
     }
 
     saveSalaryExpensesToStorage();
@@ -1331,7 +1580,11 @@ function saveSalaryExpense(event) {
         }
     }
 
-    showNotification(`Salary expense for ${employeeName} ${expenseId ? 'updated' : 'saved'} successfully`, 'success');
+    if (window.lastSalaryExpenseSaveError) {
+        showNotification(`Salary expense ${expenseId ? 'updated' : 'saved'} locally. Supabase sync pending.`, 'warning');
+    } else {
+        showNotification(`Salary expense for ${employeeName} ${expenseId ? 'updated' : 'saved'} successfully`, 'success');
+    }
 }
 
 function showEditSalaryExpenseModal(expenseId) {
@@ -1340,7 +1593,7 @@ function showEditSalaryExpenseModal(expenseId) {
     }
 
     const expenses = loadSalaryExpensesFromStorage() || [];
-    const expense = expenses.find((item) => item.id === expenseId);
+    const expense = expenses.find((item) => String(item.id) === String(expenseId));
 
     if (!expense) {
         showNotification('Salary expense record not found', 'error');
@@ -1352,7 +1605,7 @@ function showEditSalaryExpenseModal(expenseId) {
 
 function showSalaryExpenseDetailsModal(expenseId) {
     const expenses = loadSalaryExpensesFromStorage() || [];
-    const expense = expenses.find((item) => item.id === expenseId);
+    const expense = expenses.find((item) => String(item.id) === String(expenseId));
 
     if (!expense) {
         showNotification('Salary expense record not found', 'error');
@@ -1412,7 +1665,7 @@ function showSalaryExpenseDetailsModal(expenseId) {
             ` : ''}
 
             <div style="display: flex; gap: 10px;">
-                <button class="btn btn-secondary" onclick="printSalaryExpenseDetails(${expense.id})" style="flex: 1;">Print</button>
+                <button class="btn btn-secondary" onclick="printSalaryExpenseDetails('${escapeSingleQuoteAttr(expense.id)}')" style="flex: 1;">Print</button>
                 <button class="btn btn-primary" onclick="document.getElementById('salary-expense-details-modal').remove()" style="flex: 1;">Close</button>
             </div>
         </div>
@@ -1423,7 +1676,7 @@ function showSalaryExpenseDetailsModal(expenseId) {
 
 function printSalaryExpenseDetails(expenseId) {
     const expenses = loadSalaryExpensesFromStorage() || [];
-    const expense = expenses.find((item) => item.id === expenseId);
+    const expense = expenses.find((item) => String(item.id) === String(expenseId));
     const companyName = (typeof CONFIG !== 'undefined' && CONFIG.COMPANY_NAME) ? CONFIG.COMPANY_NAME : 'Company';
     const generatedAt = new Date().toLocaleString();
 
@@ -1486,13 +1739,13 @@ function printSalaryExpenseDetails(expenseId) {
     printWindow.print();
 }
 
-function deleteSalaryExpense(expenseId) {
+async function deleteSalaryExpense(expenseId) {
     if (!ensureDataActionPermission('delete')) {
         return;
     }
 
     const expenses = loadSalaryExpensesFromStorage() || [];
-    const expense = expenses.find((item) => item.id === expenseId);
+    const expense = expenses.find((item) => String(item.id) === String(expenseId));
 
     if (!expense) {
         showNotification('Salary expense record not found', 'error');
@@ -1502,7 +1755,13 @@ function deleteSalaryExpense(expenseId) {
     const confirmed = confirm(`Delete salary expense for ${expense.employeeName}? This cannot be undone.`);
     if (!confirmed) return;
 
-    window.allSalaryExpenses = expenses.filter((item) => item.id !== expenseId);
+    const cloudDeleted = await deleteSalaryExpenseFromSupabase(expense);
+    if (!cloudDeleted) {
+        showNotification('Unable to delete salary expense from cloud. Try again.', 'warning');
+        return;
+    }
+
+    window.allSalaryExpenses = expenses.filter((item) => String(item.id) !== String(expenseId));
     saveSalaryExpensesToStorage();
 
     const contentEl = document.getElementById('expense-subtab-content');
@@ -1535,6 +1794,26 @@ function renderDailyExpensesTab(contentEl) {
     `;
 
     displayDailyExpensesTable(expenses);
+
+    (async () => {
+        try {
+            const syncedLocal = await syncUnsyncedDailyExpensesToSupabase(window.allDailyExpenses || []);
+            window.allDailyExpenses = syncedLocal;
+            saveDailyExpensesToStorage();
+
+            const cloud = await fetchDailyExpensesFromSupabase();
+            if (Array.isArray(cloud) && cloud.length > 0) {
+                window.allDailyExpenses = mergeExpenseByKey(normalizeDailyExpenseRecord, window.allDailyExpenses || [], cloud);
+                saveDailyExpensesToStorage();
+            }
+
+            if (window.paymentActiveTab === 'expenses' && window.expenseSubTab === 'daily') {
+                displayDailyExpensesTable(window.allDailyExpenses || []);
+            }
+        } catch (error) {
+            console.error('Failed syncing daily expenses with Supabase:', error);
+        }
+    })();
 }
 
 function displayDailyExpensesTable(expenses) {
@@ -1567,6 +1846,7 @@ function displayDailyExpensesTable(expenses) {
 
     expenses.forEach((expense) => {
         const rowTotal = Number(expense.totalAmount) || 0;
+        const rowId = escapeSingleQuoteAttr(expense.id);
         total += rowTotal;
         html += '<tr>';
         html += `<td>${expense.expenseDate || '-'}</td>`;
@@ -1578,12 +1858,12 @@ function displayDailyExpensesTable(expenses) {
         html += `<td style="text-align: right; font-weight: 700; color: #2563eb;">${formatPKR(rowTotal)}</td>`;
         html += '<td>';
         html += `<div style="display: flex; gap: 6px; white-space: nowrap;">`;
-        html += `<button class="btn btn-sm btn-secondary" onclick="showDailyExpenseDetailsModal(${expense.id})" title="View Details" style="width: 28px; height: 28px; padding: 0;"><i class="fas fa-eye"></i></button>`;
+        html += `<button class="btn btn-sm btn-secondary" onclick="showDailyExpenseDetailsModal('${rowId}')" title="View Details" style="width: 28px; height: 28px; padding: 0;"><i class="fas fa-eye"></i></button>`;
         if (canEditData) {
-            html += `<button class="btn btn-sm btn-primary" onclick="showEditDailyExpenseModal(${expense.id})" title="Edit Expense" style="width: 28px; height: 28px; padding: 0;"><i class="fas fa-edit"></i></button>`;
+            html += `<button class="btn btn-sm btn-primary" onclick="showEditDailyExpenseModal('${rowId}')" title="Edit Expense" style="width: 28px; height: 28px; padding: 0;"><i class="fas fa-edit"></i></button>`;
         }
         if (canDeleteData) {
-            html += `<button class="btn btn-sm" style="background: var(--danger); color: white; width: 28px; height: 28px; padding: 0;" onclick="deleteDailyExpense(${expense.id})" title="Delete Expense"><i class="fas fa-trash"></i></button>`;
+            html += `<button class="btn btn-sm" style="background: var(--danger); color: white; width: 28px; height: 28px; padding: 0;" onclick="deleteDailyExpense('${rowId}')" title="Delete Expense"><i class="fas fa-trash"></i></button>`;
         }
         html += '</div>';
         html += '</td>';
@@ -1705,7 +1985,7 @@ function calculateDailyExpenseTotals() {
     return { workingDays, travelPerDay, mealPerDay, fuelPerDay, otherPerDay, totalAmount };
 }
 
-function saveDailyExpense(event) {
+async function saveDailyExpense(event) {
     event.preventDefault();
 
     const expenseId = document.getElementById('daily-expense-id')?.value;
@@ -1747,11 +2027,22 @@ function saveDailyExpense(event) {
             ...payload,
             id: window.allDailyExpenses[index].id
         };
+
+        const synced = await saveDailyExpenseToSupabase(window.allDailyExpenses[index]);
+        if (synced && typeof synced === 'object') {
+            window.allDailyExpenses[index] = synced;
+        }
     } else {
-        window.allDailyExpenses.unshift({
+        const newExpense = {
             id: Date.now(),
             ...payload
-        });
+        };
+        window.allDailyExpenses.unshift(newExpense);
+
+        const synced = await saveDailyExpenseToSupabase(newExpense);
+        if (synced && typeof synced === 'object') {
+            window.allDailyExpenses = mergeExpenseByKey(normalizeDailyExpenseRecord, window.allDailyExpenses, [synced]);
+        }
     }
 
     saveDailyExpensesToStorage();
@@ -1764,7 +2055,11 @@ function saveDailyExpense(event) {
         renderDailyExpensesTab(contentEl);
     }
 
-    showNotification(`Daily expense for ${employeeName} ${expenseId ? 'updated' : 'saved'} successfully`, 'success');
+    if (window.lastDailyExpenseSaveError) {
+        showNotification(`Daily expense ${expenseId ? 'updated' : 'saved'} locally. Supabase sync pending.`, 'warning');
+    } else {
+        showNotification(`Daily expense for ${employeeName} ${expenseId ? 'updated' : 'saved'} successfully`, 'success');
+    }
 }
 
 function showEditDailyExpenseModal(expenseId) {
@@ -1773,7 +2068,7 @@ function showEditDailyExpenseModal(expenseId) {
     }
 
     const expenses = loadDailyExpensesFromStorage() || [];
-    const expense = expenses.find((item) => item.id === expenseId);
+    const expense = expenses.find((item) => String(item.id) === String(expenseId));
     if (!expense) {
         showNotification('Daily expense record not found', 'error');
         return;
@@ -1781,13 +2076,13 @@ function showEditDailyExpenseModal(expenseId) {
     showRecordDailyExpenseModal(expense);
 }
 
-function deleteDailyExpense(expenseId) {
+async function deleteDailyExpense(expenseId) {
     if (!ensureDataActionPermission('delete')) {
         return;
     }
 
     const expenses = loadDailyExpensesFromStorage() || [];
-    const expense = expenses.find((item) => item.id === expenseId);
+    const expense = expenses.find((item) => String(item.id) === String(expenseId));
     if (!expense) {
         showNotification('Daily expense record not found', 'error');
         return;
@@ -1796,7 +2091,13 @@ function deleteDailyExpense(expenseId) {
     const confirmed = confirm(`Delete daily expense for ${expense.employeeName}? This cannot be undone.`);
     if (!confirmed) return;
 
-    window.allDailyExpenses = expenses.filter((item) => item.id !== expenseId);
+    const cloudDeleted = await deleteDailyExpenseFromSupabase(expense);
+    if (!cloudDeleted) {
+        showNotification('Unable to delete daily expense from cloud. Try again.', 'warning');
+        return;
+    }
+
+    window.allDailyExpenses = expenses.filter((item) => String(item.id) !== String(expenseId));
     saveDailyExpensesToStorage();
 
     const contentEl = document.getElementById('expense-subtab-content');
@@ -1809,7 +2110,7 @@ function deleteDailyExpense(expenseId) {
 
 function showDailyExpenseDetailsModal(expenseId) {
     const expenses = loadDailyExpensesFromStorage() || [];
-    const expense = expenses.find((item) => item.id === expenseId);
+    const expense = expenses.find((item) => String(item.id) === String(expenseId));
 
     if (!expense) {
         showNotification('Daily expense record not found', 'error');
@@ -1862,7 +2163,7 @@ function showDailyExpenseDetailsModal(expenseId) {
             ` : ''}
 
             <div style="display: flex; gap: 10px;">
-                <button class="btn btn-secondary" onclick="printDailyExpenseDetails(${expense.id})" style="flex: 1;">Print</button>
+                <button class="btn btn-secondary" onclick="printDailyExpenseDetails('${escapeSingleQuoteAttr(expense.id)}')" style="flex: 1;">Print</button>
                 <button class="btn btn-primary" onclick="document.getElementById('daily-expense-details-modal').remove()" style="flex: 1;">Close</button>
             </div>
         </div>
@@ -1873,7 +2174,7 @@ function showDailyExpenseDetailsModal(expenseId) {
 
 function printDailyExpenseDetails(expenseId) {
     const expenses = loadDailyExpensesFromStorage() || [];
-    const expense = expenses.find((item) => item.id === expenseId);
+    const expense = expenses.find((item) => String(item.id) === String(expenseId));
     const companyName = (typeof CONFIG !== 'undefined' && CONFIG.COMPANY_NAME) ? CONFIG.COMPANY_NAME : 'Company';
     const generatedAt = new Date().toLocaleString();
 
