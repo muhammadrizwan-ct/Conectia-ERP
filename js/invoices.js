@@ -880,8 +880,10 @@ async function deleteInvoiceFromSupabase(invoice = {}) {
         }
 
         const message = String(error.message || '').toLowerCase();
+        const errorCode = String(error.code || '').trim();
         const likelyPermissionIssue = message.includes('permission') || message.includes('rls') || message.includes('policy') || message.includes('unauthorized');
-        if (likelyPermissionIssue) {
+        const likelyConstraintIssue = errorCode === '23503' || message.includes('foreign key') || message.includes('still referenced');
+        if (likelyPermissionIssue || likelyConstraintIssue) {
             const details = invoice?.details && typeof invoice.details === 'object' ? invoice.details : {};
             const softDeletePayload = {
                 status: 'Deleted',
