@@ -803,6 +803,8 @@ function filterPaymentTransactions(skipAutoReset = false) {
     
     if (!window.allPayments) return;
     
+    const numericTargets = extractSearchNumbers(searchText);
+
     const filtered = window.allPayments.filter(payment => {
         // Client filter
         if (clientFilter && payment.clientName !== clientFilter) {
@@ -830,8 +832,16 @@ function filterPaymentTransactions(skipAutoReset = false) {
                 item.invoiceNo.toLowerCase().includes(searchLower) ||
                 item.clientName.toLowerCase().includes(searchLower)
             );
+            const matchesAmount = [
+                payment.totalAmount,
+                payment.amount,
+                payment.netAmount,
+                payment.taxAmount,
+                payment.invoiceAmount,
+                payment.paidAmount
+            ].some((value) => amountMatchesSearchValue(value, searchText, numericTargets));
             
-            if (!matchesReference && !matchesClient && !matchesMethod && !matchesInvoice && !matchesLineItems) {
+            if (!matchesReference && !matchesClient && !matchesMethod && !matchesInvoice && !matchesLineItems && !matchesAmount) {
                 return false;
             }
         }
@@ -885,17 +895,6 @@ function amountMatchesSearchValue(amount, searchText, numericTargets = []) {
         String(absolute).includes(queryDigits)
     );
 }
-    const numericTargets = extractSearchNumbers(searchText);
-
-    const filtered = window.allPayments.filter(payment => {
-            const matchesAmount = [
-                payment.totalAmount,
-                payment.amount,
-                payment.netAmount,
-                payment.taxAmount,
-                payment.invoiceAmount,
-                payment.paidAmount
-            ].some((value) => amountMatchesSearchValue(value, searchText, numericTargets));
 
 function resetPaymentFilters() {
     return resetPaymentFiltersWithAutoApply(true);
