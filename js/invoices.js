@@ -2951,6 +2951,114 @@ async function showGenerateInvoiceModal() {
 }
 
 // Load client vehicles for invoice generation
+function renderInvoiceVehicleSelectionList(vehiclesListEl, vehicles = [], selectedClientDefaultRate = 0) {
+    if (!vehiclesListEl) return false;
+
+    if (!Array.isArray(vehicles) || vehicles.length === 0) {
+        vehiclesListEl.innerHTML = '<p style="color: var(--danger); text-align: center; padding: 20px;">No active vehicles found for this client.</p>';
+        return false;
+    }
+
+    const resolveVehicleRate = (vehicle) => {
+        const rawRate = vehicle?.monthlyRate ?? vehicle?.unitRate ?? vehicle?.monthly_rate ?? vehicle?.unit_rate ?? vehicle?.rate ?? vehicle?.unitPrice ?? vehicle?.unitprice ?? 0;
+        const parsedRate = Number(String(rawRate).replace(/,/g, '').trim());
+        if (Number.isFinite(parsedRate) && parsedRate > 0) {
+            return parsedRate;
+        }
+        return selectedClientDefaultRate;
+    };
+
+    const mappedVehicles = (vehicles || []).map((vehicle) => {
+        const registrationNo = String(
+            vehicle?.registrationNo ||
+            vehicle?.registration_no ||
+            vehicle?.registrationno ||
+            vehicle?.reg_no ||
+            ''
+        ).trim();
+
+        const vehicleName = String(
+            vehicle?.vehicleName ||
+            vehicle?.vehicle_name ||
+            vehicle?.name ||
+            vehicle?.model ||
+            registrationNo ||
+            'Vehicle'
+        ).trim();
+
+        const normalizedCategory = String(vehicle?.category || vehicle?.type || 'Uncategorized').trim() || 'Uncategorized';
+
+        return {
+            ...vehicle,
+            registrationNo,
+            vehicleName,
+            category: normalizedCategory,
+            __resolvedRate: resolveVehicleRate(vehicle)
+        };
+    });
+
+    const categories = {};
+    mappedVehicles.forEach((vehicle) => {
+        const category = vehicle.category || 'Uncategorized';
+        if (!categories[category]) {
+            categories[category] = [];
+        }
+        categories[category].push(vehicle);
+    });
+
+    let html = '';
+    Object.keys(categories).sort().forEach((category) => {
+        const categoryVehicles = categories[category];
+        const categoryTotal = categoryVehicles.reduce((sum, v) => sum + (Number(v.__resolvedRate) || 0), 0);
+
+        html += `<div style="margin-bottom: 16px;">`;
+        html += `<div style="background: var(--gray-800); color: white; padding: 10px 12px; border-radius: 6px; display: flex; align-items: center;">`;
+        html += `<label style="display: flex; align-items: center; cursor: pointer; flex: 1;">`;
+        html += `<input type="checkbox" class="category-select-all" data-category="${category}" onchange="toggleCategoryVehicles('${category}')" style="margin-right: 12px;" checked>`;
+        html += `<span style="font-weight: 600;">${category}</span>`;
+        html += `<span style="margin-left: auto; font-size: 13px;">${categoryVehicles.length} vehicles - ${formatPKR(categoryTotal)}/month</span>`;
+        html += `</label>`;
+        html += `</div>`;
+
+        html += `<div id="category-${category.replace(/[^a-zA-Z0-9]/g, '-')}" style="padding: 8px 0;">`;
+        categoryVehicles.forEach((vehicle) => {
+            const vehicleValue = vehicle.vehicleId || vehicle.id || '';
+            const vehicleName = vehicle.vehicleName || vehicle.name || vehicle.registrationNo || 'Vehicle';
+            const vehicleRate = Number(vehicle.__resolvedRate || 0) || 0;
+
+            html += `
+                <div style="display: flex; align-items: center; padding: 10px 12px; border-bottom: 1px solid var(--gray-200);">
+                    <input type="checkbox" class="vehicle-checkbox" data-category="${category}" 
+                           value="${vehicleValue}" data-reg="${vehicle.registrationNo || ''}" 
+                           data-name="${vehicleName}" data-rate="${vehicleRate}" 
+                           data-category="${category}" style="margin-right: 12px;" 
+                           onchange="updateSelectedCount(); updateInvoicePreview();" checked>
+                    <div style="flex: 1;">
+                        <div style="display: flex; align-items: center; gap: 8px;">
+                            <span style="font-weight: 600;">${vehicle.registrationNo || '-'}</span>
+                            <span style="font-size: 12px; color: var(--gray-500);">${vehicleName}</span>
+                        </div>
+                        <div style="font-size: 11px; color: var(--gray-500); margin-top: 2px;">
+                            <span class="badge" style="background: var(--gray-200); padding: 2px 8px; border-radius: 999px;">
+                                ${vehicle.category || 'Uncategorized'}
+                            </span>
+                        </div>
+                    </div>
+                    <div style="font-weight: 600; color: var(--success);">${formatPKR(vehicleRate)}</div>
+                </div>
+            `;
+        });
+
+        html += `</div>`;
+        html += `</div>`;
+    });
+
+    vehiclesListEl.innerHTML = html;
+    updateSelectedCount();
+    updateInvoicePreview();
+    return true;
+}
+
 async function loadClientVehiclesForInvoice() {
     const selectedClientValue = document.getElementById('invoice-client').value;
     const selectedClientOption = document.getElementById('invoice-client').selectedOptions?.[0] || null;
@@ -2964,143 +3072,106 @@ async function loadClientVehiclesForInvoice() {
 
     const selectedById = selectedClientValue.startsWith('id:');
     const selectedClientId = selectedById ? selectedClientValue.slice(3) : '';
+    const selectedClientDbId = String(selectedClientOption?.dataset?.clientDbId || '').trim();
     const optionClientName = String(selectedClientOption?.dataset?.clientName || '').trim();
     const selectedClientName = selectedById ? optionClientName : selectedClientValue.replace(/^name:/, '');
     const normalizeName = (value) => String(value || '').replace(/\s+/g, ' ').trim().toLowerCase();
+    const withTimeout = (promise, timeoutMs = 4000) => Promise.race([
+        promise,
+        new Promise((_, reject) => setTimeout(() => reject(new Error('timeout')), timeoutMs))
+    ]);
 
     const clientRateMap = window.invoiceClientRateMap || new Map();
     const optionDefaultRate = Number(selectedClientOption?.dataset?.defaultRate || 0) || 0;
     const mappedRateById = selectedClientId ? Number(clientRateMap.get(`id:${selectedClientId}`) || 0) : 0;
     const mappedRateByName = selectedClientName ? Number(clientRateMap.get(`name:${normalizeName(selectedClientName)}`) || 0) : 0;
     const selectedClientDefaultRate = optionDefaultRate || mappedRateById || mappedRateByName || 0;
+    const requestId = (window.invoiceVehicleLoadRequestId || 0) + 1;
+    window.invoiceVehicleLoadRequestId = requestId;
+    const stillCurrentRequest = () => window.invoiceVehicleLoadRequestId === requestId;
     
-    vehiclesList.innerHTML = '<div style="text-align: center; padding: 20px;"><i class="fas fa-spinner fa-spin"></i> Loading vehicles...</div>';
     vehiclesDiv.style.display = 'block';
     
     try {
-        let vehicles = [];
-        try {
-            if (selectedClientId) {
-                const apiResult = await API.getClientVehicles(selectedClientId);
-                vehicles = Array.isArray(apiResult)
-                    ? apiResult
-                    : (apiResult?.vehicles || apiResult?.items || apiResult?.results || apiResult?.rows || []);
-            } else {
-                throw new Error('No client id available for direct client-vehicles API call');
-            }
-        } catch (e) {
-            const allCandidates = [];
-
-            try {
-                const supabaseVehicles = typeof fetchVehiclesFromSupabase === 'function' ? await fetchVehiclesFromSupabase() : [];
-                if (Array.isArray(supabaseVehicles) && supabaseVehicles.length > 0) {
-                    allCandidates.push(...supabaseVehicles);
-                }
-            } catch (supabaseError) {
-                // Continue to next fallback
-            }
-
-            if (Array.isArray(window.allVehicles) && window.allVehicles.length > 0) {
-                allCandidates.push(...window.allVehicles);
-            }
-
-            const storedVehicles = loadVehiclesFromStorage();
-            if (Array.isArray(storedVehicles) && storedVehicles.length > 0) {
-                allCandidates.push(...storedVehicles);
-            }
-
-            const selectedName = normalizeName(selectedClientName || '');
-            vehicles = allCandidates.filter((vehicle) => {
-                const vehicleClientId = String(vehicle?.clientId || vehicle?.client_id || '').trim();
-                const vehicleClientName = normalizeName(vehicle?.clientName || vehicle?.clientname || vehicle?.client || '');
-                const matchesId = selectedClientId && vehicleClientId && vehicleClientId === String(selectedClientId);
-                const matchesName = selectedName && vehicleClientName === selectedName;
-                return matchesId || matchesName;
-            });
-        }
-        
-        if (!vehicles || vehicles.length === 0) {
-            vehiclesList.innerHTML = '<p style="color: var(--danger); text-align: center; padding: 20px;">No active vehicles found for this client.</p>';
-            return;
-        }
-
-        const resolveVehicleRate = (vehicle) => {
-            const rawRate = vehicle?.monthlyRate ?? vehicle?.unitRate ?? vehicle?.monthly_rate ?? vehicle?.unit_rate ?? vehicle?.rate ?? vehicle?.unitPrice ?? vehicle?.unitprice ?? 0;
-            const parsedRate = Number(String(rawRate).replace(/,/g, '').trim());
-            if (Number.isFinite(parsedRate) && parsedRate > 0) {
-                return parsedRate;
-            }
-            return selectedClientDefaultRate;
+        const selectedName = normalizeName(selectedClientName || '');
+        const matchesSelectedClient = (vehicle = {}) => {
+            const vehicleClientId = String(vehicle?.clientId || vehicle?.client_id || '').trim();
+            const vehicleClientName = normalizeName(vehicle?.clientName || vehicle?.clientname || vehicle?.client || '');
+            const matchesId = Boolean(vehicleClientId) && (
+                (selectedClientId && vehicleClientId === String(selectedClientId)) ||
+                (selectedClientDbId && vehicleClientId === String(selectedClientDbId))
+            );
+            const matchesName = selectedName && vehicleClientName === selectedName;
+            return matchesId || matchesName;
         };
 
-        vehicles = (vehicles || []).map((vehicle) => ({
-            ...vehicle,
-            __resolvedRate: resolveVehicleRate(vehicle)
-        }));
-        
-        // Group vehicles by category
-        const categories = {};
-        vehicles.forEach(vehicle => {
-            const category = vehicle.category || 'Uncategorized';
-            if (!categories[category]) {
-                categories[category] = [];
-            }
-            categories[category].push(vehicle);
-        });
-        
-        let html = '';
-        let totalVehicles = 0;
-        
-        Object.keys(categories).sort().forEach(category => {
-            const categoryVehicles = categories[category];
-            const categoryTotal = categoryVehicles.reduce((sum, v) => sum + (Number(v.__resolvedRate) || 0), 0);
-            totalVehicles += categoryVehicles.length;
-            
-            html += `<div style="margin-bottom: 16px;">`;
-            html += `<div style="background: var(--gray-800); color: white; padding: 10px 12px; border-radius: 6px; display: flex; align-items: center;">`;
-            html += `<label style="display: flex; align-items: center; cursor: pointer; flex: 1;">`;
-            html += `<input type="checkbox" class="category-select-all" data-category="${category}" onchange="toggleCategoryVehicles('${category}')" style="margin-right: 12px;" checked>`;
-            html += `<span style="font-weight: 600;">${category}</span>`;
-            html += `<span style="margin-left: auto; font-size: 13px;">${categoryVehicles.length} vehicles - ${formatPKR(categoryTotal)}/month</span>`;
-            html += `</label>`;
-            html += `</div>`;
-            
-            html += `<div id="category-${category.replace(/[^a-zA-Z0-9]/g, '-')}" style="padding: 8px 0;">`;
-            
-            categoryVehicles.forEach(vehicle => {
-                const vehicleValue = vehicle.vehicleId || vehicle.id || '';
-                const vehicleName = vehicle.vehicleName || vehicle.name || vehicle.registrationNo || 'Vehicle';
-                const vehicleRate = Number(vehicle.__resolvedRate || 0) || 0;
-                html += `
-                    <div style="display: flex; align-items: center; padding: 10px 12px; border-bottom: 1px solid var(--gray-200);">
-                        <input type="checkbox" class="vehicle-checkbox" data-category="${category}" 
-                               value="${vehicleValue}" data-reg="${vehicle.registrationNo || ''}" 
-                               data-name="${vehicleName}" data-rate="${vehicleRate}" 
-                               data-category="${category}" style="margin-right: 12px;" 
-                               onchange="updateSelectedCount(); updateInvoicePreview();" checked>
-                        <div style="flex: 1;">
-                            <div style="display: flex; align-items: center; gap: 8px;">
-                                <span style="font-weight: 600;">${vehicle.registrationNo || '-'}</span>
-                                <span style="font-size: 12px; color: var(--gray-500);">${vehicleName}</span>
-                            </div>
-                            <div style="font-size: 11px; color: var(--gray-500); margin-top: 2px;">
-                                <span class="badge" style="background: var(--gray-200); padding: 2px 8px; border-radius: 999px;">
-                                    ${vehicle.category || 'Uncategorized'}
-                                </span>
-                            </div>
-                        </div>
-                        <div style="font-weight: 600; color: var(--success);">${formatPKR(vehicleRate)}</div>
-                    </div>
-                `;
+        const dedupeVehicles = (items = []) => {
+            const seen = new Set();
+            const result = [];
+            (Array.isArray(items) ? items : []).forEach((vehicle) => {
+                const key = String(vehicle?.id || vehicle?.vehicleId || vehicle?.registrationNo || '').trim().toLowerCase();
+                if (!key || seen.has(key)) return;
+                seen.add(key);
+                result.push(vehicle);
             });
-            
-            html += `</div>`;
-            html += `</div>`;
-        });
-        
-        vehiclesList.innerHTML = html;
-        updateSelectedCount();
-        updateInvoicePreview();
+            return result;
+        };
+
+        // Fast local fallback first so UI does not remain stuck on spinner.
+        const localCandidates = [];
+        if (Array.isArray(window.invoiceVehiclesCache) && window.invoiceVehiclesCache.length > 0) {
+            localCandidates.push(...window.invoiceVehiclesCache);
+        }
+        if (Array.isArray(window.allVehicles) && window.allVehicles.length > 0) {
+            localCandidates.push(...window.allVehicles);
+        }
+        const storedVehicles = loadVehiclesFromStorage();
+        if (Array.isArray(storedVehicles) && storedVehicles.length > 0) {
+            localCandidates.push(...storedVehicles);
+        }
+        const dedupedLocalCandidates = dedupeVehicles(localCandidates);
+
+        let vehicles = dedupedLocalCandidates.filter(matchesSelectedClient);
+
+        if (vehicles.length > 0) {
+            renderInvoiceVehicleSelectionList(vehiclesList, vehicles, selectedClientDefaultRate);
+        } else {
+            vehiclesList.innerHTML = '<div style="text-align: center; padding: 20px;"><i class="fas fa-spinner fa-spin"></i> Loading vehicles...</div>';
+        }
+
+        // Refresh in background to avoid blocking UI.
+        (async () => {
+            let remoteVehicles = [];
+            try {
+                const preferredClientId = selectedClientDbId || selectedClientId;
+                if (preferredClientId) {
+                    const apiResult = await withTimeout(API.getClientVehicles(preferredClientId), 3000);
+                    remoteVehicles = Array.isArray(apiResult)
+                        ? apiResult
+                        : (apiResult?.vehicles || apiResult?.items || apiResult?.results || apiResult?.rows || []);
+                }
+            } catch (e) {
+                try {
+                    const supabaseVehicles = typeof fetchVehiclesFromSupabase === 'function'
+                        ? await withTimeout(fetchVehiclesFromSupabase(), 3000)
+                        : [];
+                    if (Array.isArray(supabaseVehicles) && supabaseVehicles.length > 0) {
+                        window.invoiceVehiclesCache = supabaseVehicles;
+                        remoteVehicles = supabaseVehicles.filter(matchesSelectedClient);
+                    }
+                } catch (supabaseError) {
+                    remoteVehicles = [];
+                }
+            }
+
+            if (!stillCurrentRequest()) return;
+
+            const finalVehicles = (Array.isArray(remoteVehicles) && remoteVehicles.length > 0)
+                ? dedupeVehicles(remoteVehicles)
+                : vehicles;
+
+            renderInvoiceVehicleSelectionList(vehiclesList, finalVehicles, selectedClientDefaultRate);
+        })();
         
     } catch (error) {
         console.error('Failed to load vehicles:', error);
