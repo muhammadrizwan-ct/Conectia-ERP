@@ -14,6 +14,59 @@ function isDashboardStillActive() {
     return (sessionStorage.getItem('currentPage') || '') === 'dashboard';
 }
 
+function readDashboardLocalData() {
+    const parseSafe = (key) => {
+        try {
+            const raw = localStorage.getItem(key);
+            const parsed = raw ? JSON.parse(raw) : [];
+            return Array.isArray(parsed) ? parsed : [];
+        } catch (error) {
+            return [];
+        }
+    };
+
+    return {
+        clients: parseSafe(STORAGE_KEYS.CLIENTS),
+        vehicles: parseSafe(STORAGE_KEYS.VEHICLES),
+        invoices: parseSafe(STORAGE_KEYS.INVOICES),
+        payments: parseSafe(STORAGE_KEYS.PAYMENTS)
+    };
+}
+
+async function hydrateDashboardDataStore() {
+    const local = readDashboardLocalData();
+    const store = {
+        clients: [...local.clients],
+        vehicles: [...local.vehicles],
+        invoices: [...local.invoices],
+        payments: [...local.payments]
+    };
+
+    const settleList = await Promise.allSettled([
+        (typeof fetchClientsFromSupabase === 'function') ? withTimeout(fetchClientsFromSupabase(), 2500) : Promise.resolve([]),
+        (typeof fetchVehiclesFromSupabase === 'function') ? withTimeout(fetchVehiclesFromSupabase(), 2500) : Promise.resolve([]),
+        (typeof fetchInvoicesFromSupabase === 'function') ? withTimeout(fetchInvoicesFromSupabase(), 2500) : Promise.resolve([]),
+        (typeof fetchPaymentsFromSupabase === 'function') ? withTimeout(fetchPaymentsFromSupabase(), 2500) : Promise.resolve([])
+    ]);
+
+    const [clientsRes, vehiclesRes, invoicesRes, paymentsRes] = settleList;
+    if (clientsRes.status === 'fulfilled' && Array.isArray(clientsRes.value) && clientsRes.value.length > 0) {
+        store.clients = clientsRes.value;
+    }
+    if (vehiclesRes.status === 'fulfilled' && Array.isArray(vehiclesRes.value) && vehiclesRes.value.length > 0) {
+        store.vehicles = vehiclesRes.value;
+    }
+    if (invoicesRes.status === 'fulfilled' && Array.isArray(invoicesRes.value) && invoicesRes.value.length > 0) {
+        store.invoices = invoicesRes.value;
+    }
+    if (paymentsRes.status === 'fulfilled' && Array.isArray(paymentsRes.value) && paymentsRes.value.length > 0) {
+        store.payments = paymentsRes.value;
+    }
+
+    window.dashboardDataStore = store;
+    return store;
+}
+
 async function loadDashboard() {
     // Dashboard download actions
     document.getElementById('header-actions').innerHTML = `
@@ -90,13 +143,14 @@ async function loadDashboard() {
     
     try {
         const selectedYear = Number(document.getElementById('revenue-year')?.value) || new Date().getFullYear();
+        const dataStore = await hydrateDashboardDataStore();
 
         const [metrics, topClients, recentInvoices, monthlyData, paymentStatus] = await Promise.all([
-            withTimeout(API.getDashboardMetrics(), 2000).catch(() => calculateDashboardMetrics()),
-            withTimeout(API.getTopClients(5), 2000).catch(() => getTopClientsFromData(5)),
-            withTimeout(API.getInvoices({ limit: 5, sort: 'desc' }), 2000).catch(() => getRecentInvoices(5)),
-            withTimeout(API.getMonthlySummary(selectedYear), 2000).catch(() => getMonthlySummaryFromData(selectedYear)),
-            withTimeout(API.getPaymentStatus(), 2000).catch(() => getPaymentStatus())
+            withTimeout(API.getDashboardMetrics(), 2000).catch(() => calculateDashboardMetrics(dataStore)),
+            withTimeout(API.getTopClients(5), 2000).catch(() => getTopClientsFromData(5, dataStore)),
+            withTimeout(API.getInvoices({ limit: 5, sort: 'desc' }), 2000).catch(() => getRecentInvoices(5, dataStore)),
+            withTimeout(API.getMonthlySummary(selectedYear), 2000).catch(() => getMonthlySummaryFromData(selectedYear, dataStore)),
+            withTimeout(API.getPaymentStatus(), 2000).catch(() => getPaymentStatus(dataStore))
         ]);
 
         // Avoid drawing stale results if user switched tabs while requests were in flight.
@@ -517,11 +571,11 @@ function displayPaymentChart(paymentData) {
 }
 
 // Calculate dashboard metrics from actual data
-function calculateDashboardMetrics() {
-    const clients = JSON.parse(localStorage.getItem(STORAGE_KEYS.CLIENTS) || '[]');
-    const invoices = JSON.parse(localStorage.getItem(STORAGE_KEYS.INVOICES) || '[]');
-    const payments = JSON.parse(localStorage.getItem(STORAGE_KEYS.PAYMENTS) || '[]');
-    const vehicles = JSON.parse(localStorage.getItem(STORAGE_KEYS.VEHICLES) || '[]');
+function calculateDashboardMetrics(dataStore = window.dashboardDataStore || readDashboardLocalData()) {
+    const clients = Array.isArray(dataStore.clients) ? dataStore.clients : [];
+    const invoices = Array.isArray(dataStore.invoices) ? dataStore.invoices : [];
+    const payments = Array.isArray(dataStore.payments) ? dataStore.payments : [];
+    const vehicles = Array.isArray(dataStore.vehicles) ? dataStore.vehicles : [];
     
     const currentMonth = new Date().getMonth() + 1;
     const currentYear = new Date().getFullYear();
@@ -563,9 +617,8 @@ function calculateDashboardMetrics() {
 }
 
 // Get top clients from actual data
-function getTopClientsFromData(limit = 5) {
-    const invoices = JSON.parse(localStorage.getItem(STORAGE_KEYS.INVOICES) || '[]');
-    const clients = JSON.parse(localStorage.getItem(STORAGE_KEYS.CLIENTS) || '[]');
+function getTopClientsFromData(limit = 5, dataStore = window.dashboardDataStore || readDashboardLocalData()) {
+    const invoices = Array.isArray(dataStore.invoices) ? dataStore.invoices : [];
     
     // Group invoices by client
     const clientData = {};
@@ -599,10 +652,9 @@ function getTopClientsFromData(limit = 5) {
 }
 
 // Get clients chart data with vehicle and payment info
-function getClientsChartData(limit = 10) {
-    const invoices = JSON.parse(localStorage.getItem(STORAGE_KEYS.INVOICES) || '[]');
-    const vehicles = JSON.parse(localStorage.getItem(STORAGE_KEYS.VEHICLES) || '[]');
-    const payments = JSON.parse(localStorage.getItem(STORAGE_KEYS.PAYMENTS) || '[]');
+function getClientsChartData(limit = 10, dataStore = window.dashboardDataStore || readDashboardLocalData()) {
+    const vehicles = Array.isArray(dataStore.vehicles) ? dataStore.vehicles : [];
+    const payments = Array.isArray(dataStore.payments) ? dataStore.payments : [];
     
     // Group vehicles by client
     const clientData = {};
@@ -645,8 +697,8 @@ function getClientsChartData(limit = 10) {
         .sort((a, b) => b.vehicleCount - a.vehicleCount)
         .slice(0, limit);
 }
-function getRecentInvoices(limit = 5) {
-    const invoices = JSON.parse(localStorage.getItem(STORAGE_KEYS.INVOICES) || '[]');
+function getRecentInvoices(limit = 5, dataStore = window.dashboardDataStore || readDashboardLocalData()) {
+    const invoices = Array.isArray(dataStore.invoices) ? dataStore.invoices : [];
     
     return invoices
         .sort((a, b) => new Date(b.invoiceDate) - new Date(a.invoiceDate))
@@ -661,8 +713,8 @@ function getRecentInvoices(limit = 5) {
 }
 
 // Get payment status from actual data
-function getPaymentStatus() {
-    const invoices = JSON.parse(localStorage.getItem(STORAGE_KEYS.INVOICES) || '[]');
+function getPaymentStatus(dataStore = window.dashboardDataStore || readDashboardLocalData()) {
+    const invoices = Array.isArray(dataStore.invoices) ? dataStore.invoices : [];
     
     let paid = 0;
     let pending = 0;
@@ -687,8 +739,8 @@ function getPaymentStatus() {
 }
 
 // Get monthly summary from actual payment data
-function getMonthlySummaryFromData(year = new Date().getFullYear()) {
-    const payments = JSON.parse(localStorage.getItem(STORAGE_KEYS.PAYMENTS) || '[]');
+function getMonthlySummaryFromData(year = new Date().getFullYear(), dataStore = window.dashboardDataStore || readDashboardLocalData()) {
+    const payments = Array.isArray(dataStore.payments) ? dataStore.payments : [];
     
     // Initialize monthly totals
     const monthlyTotals = Array(12).fill(0);
