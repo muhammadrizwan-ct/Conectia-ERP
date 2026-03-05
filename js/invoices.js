@@ -2518,92 +2518,82 @@ async function showGenerateInvoiceModal() {
             return [];
         };
 
-        // Get clients for mapping and vehicles for dropdown names
-        let clientsList = [];
-        let vehiclesList = [];
-        try {
-            const [clientsResponse, vehiclesResponse] = await Promise.all([
-                API.getClients({ limit: 1000 }),
-                API.getVehicles({ limit: 2000 })
-            ]);
-            clientsList = normalizeClientListResponse(clientsResponse);
-            vehiclesList = Array.isArray(vehiclesResponse)
-                ? vehiclesResponse
-                : (vehiclesResponse?.vehicles || vehiclesResponse?.items || vehiclesResponse?.results || []);
-        } catch (e) {
-            clientsList = loadClientsFromStorage();
-            if ((!clientsList || clientsList.length === 0) && typeof fetchClientsFromSupabase === 'function') {
-                clientsList = await fetchClientsFromSupabase();
-            }
-
-            vehiclesList = loadVehiclesFromStorage();
-            if ((!vehiclesList || vehiclesList.length === 0) && typeof fetchVehiclesFromSupabase === 'function') {
-                vehiclesList = await fetchVehiclesFromSupabase();
-            }
-        }
-
-        const clientNameToRecord = new Map();
-        (clientsList || []).forEach((client) => {
-            const name = normalizeName(client?.name || client?.clientName || client?.companyName || client?.businessName || '');
-            if (!name) return;
-            if (!clientNameToRecord.has(name.toLowerCase())) {
-                clientNameToRecord.set(name.toLowerCase(), client);
-            }
-        });
-
-        const uniqueClientMap = new Map();
-        (clientsList || [])
-            .filter((client) => {
-                const status = String(client?.status || client?.clientStatus || 'Active').toLowerCase();
-                return !status || status === 'active';
-            })
-            .forEach((client) => {
-                const clientName = normalizeName(client?.name || client?.clientName || client?.companyName || client?.businessName || '');
-                if (!clientName) return;
-                const key = normalizeNameLower(clientName);
-                if (!uniqueClientMap.has(key)) {
-                    uniqueClientMap.set(key, {
-                        clientName,
-                        clientRecord: client
-                    });
+        const buildClientDropdownState = (sourceClients, sourceVehicles) => {
+            const clientNameToRecord = new Map();
+            (sourceClients || []).forEach((client) => {
+                const name = normalizeName(client?.name || client?.clientName || client?.companyName || client?.businessName || '');
+                if (!name) return;
+                if (!clientNameToRecord.has(name.toLowerCase())) {
+                    clientNameToRecord.set(name.toLowerCase(), client);
                 }
             });
 
-        if (uniqueClientMap.size === 0) {
-            (vehiclesList || []).forEach((vehicle) => {
-                const clientName = normalizeName(vehicle?.clientName || vehicle?.clientname || vehicle?.client || '');
-                if (!clientName) return;
-                const key = normalizeNameLower(clientName);
-                if (!uniqueClientMap.has(key)) {
-                    uniqueClientMap.set(key, {
-                        clientName,
-                        clientRecord: clientNameToRecord.get(key) || null
-                    });
-                }
-            });
-        }
+            const uniqueClientMap = new Map();
+            (sourceClients || [])
+                .filter((client) => {
+                    const status = String(client?.status || client?.clientStatus || 'Active').toLowerCase();
+                    return !status || status === 'active';
+                })
+                .forEach((client) => {
+                    const clientName = normalizeName(client?.name || client?.clientName || client?.companyName || client?.businessName || '');
+                    if (!clientName) return;
+                    const key = normalizeNameLower(clientName);
+                    if (!uniqueClientMap.has(key)) {
+                        uniqueClientMap.set(key, {
+                            clientName,
+                            clientRecord: client
+                        });
+                    }
+                });
 
-        window.invoiceClientRateMap = new Map();
+            if (uniqueClientMap.size === 0) {
+                (sourceVehicles || []).forEach((vehicle) => {
+                    const clientName = normalizeName(vehicle?.clientName || vehicle?.clientname || vehicle?.client || '');
+                    if (!clientName) return;
+                    const key = normalizeNameLower(clientName);
+                    if (!uniqueClientMap.has(key)) {
+                        uniqueClientMap.set(key, {
+                            clientName,
+                            clientRecord: clientNameToRecord.get(key) || null
+                        });
+                    }
+                });
+            }
 
-        const clientOptionsHtml = Array.from(uniqueClientMap.values())
-            .sort((a, b) => a.clientName.localeCompare(b.clientName))
-            .map(({ clientName, clientRecord }) => {
-            const clientDbId = clientRecord ? resolveInvoiceClientDbId(clientRecord) : '';
-            const clientBusinessId = clientRecord
-                ? String(clientRecord.clientId || clientRecord.clientid || clientRecord.client_id || '').trim()
-                : '';
-            const clientIdentifier = clientRecord ? String(clientRecord.id || clientRecord.client_id || clientBusinessId || '').trim() : '';
-                const defaultRate = resolveClientDefaultRateValue(clientRecord);
-            const optionValue = clientIdentifier ? `id:${clientIdentifier}` : `name:${clientName}`;
-                if (clientIdentifier) {
-                    window.invoiceClientRateMap.set(`id:${clientIdentifier}`, defaultRate);
-                }
-                window.invoiceClientRateMap.set(`name:${normalizeNameLower(clientName)}`, defaultRate);
-                return `<option value="${optionValue}" data-default-rate="${defaultRate}" data-client-db-id="${clientDbId}" data-client-business-id="${clientBusinessId}" data-client-name="${clientName}">${clientName}</option>`;
-        }).join('');
-        
-        // Get next invoice number
-        const nextInvoiceNo = await getNextInvoiceNumber();
+            const rateMap = new Map();
+            const clientOptionsHtml = Array.from(uniqueClientMap.values())
+                .sort((a, b) => a.clientName.localeCompare(b.clientName))
+                .map(({ clientName, clientRecord }) => {
+                    const clientDbId = clientRecord ? resolveInvoiceClientDbId(clientRecord) : '';
+                    const clientBusinessId = clientRecord
+                        ? String(clientRecord.clientId || clientRecord.clientid || clientRecord.client_id || '').trim()
+                        : '';
+                    const clientIdentifier = clientRecord ? String(clientRecord.id || clientRecord.client_id || clientBusinessId || '').trim() : '';
+                    const defaultRate = resolveClientDefaultRateValue(clientRecord);
+                    const optionValue = clientIdentifier ? `id:${clientIdentifier}` : `name:${clientName}`;
+                    if (clientIdentifier) {
+                        rateMap.set(`id:${clientIdentifier}`, defaultRate);
+                    }
+                    rateMap.set(`name:${normalizeNameLower(clientName)}`, defaultRate);
+                    return `<option value="${optionValue}" data-default-rate="${defaultRate}" data-client-db-id="${clientDbId}" data-client-business-id="${clientBusinessId}" data-client-name="${clientName}">${clientName}</option>`;
+                }).join('');
+
+            return { clientOptionsHtml, rateMap };
+        };
+
+        // Open modal fast with cached data first.
+        let clientsList = Array.isArray(window.allClients) && window.allClients.length > 0
+            ? window.allClients
+            : loadClientsFromStorage();
+        let vehiclesList = Array.isArray(window.allVehicles) && window.allVehicles.length > 0
+            ? window.allVehicles
+            : loadVehiclesFromStorage();
+
+        const initialDropdownState = buildClientDropdownState(clientsList, vehiclesList);
+        window.invoiceClientRateMap = initialDropdownState.rateMap;
+        const clientOptionsHtml = initialDropdownState.clientOptionsHtml;
+
+        let nextInvoiceNo = getNextInvoiceNumberFromLocal();
         
         const content = `
             <form id="generate-invoice-form" onsubmit="return false;">
@@ -2617,7 +2607,7 @@ async function showGenerateInvoiceModal() {
                     <div class="form-group">
                         <label>Invoice Number (Optional)</label>
                         <input type="text" id="invoice-no" value="" placeholder="Leave blank for auto: ${nextInvoiceNo}" style="font-weight: 600;">
-                        <small style="color: var(--gray-600); font-size: 12px; margin-top: 4px; display: block;">If empty, next sequence number will be used automatically.</small>
+                        <small id="invoice-no-hint" style="color: var(--gray-600); font-size: 12px; margin-top: 4px; display: block;">If empty, next sequence number will be used automatically.</small>
                     </div>
                     
                     <div class="form-group">
@@ -2891,6 +2881,66 @@ async function showGenerateInvoiceModal() {
             } catch (error) {
                 showNotification(error.message || 'Failed to generate invoice', 'error');
                 return false;
+            }
+        });
+
+        // Hydrate fresh clients/vehicles asynchronously without blocking modal open.
+        Promise.resolve().then(async () => {
+            try {
+                const [clientsResponse, vehiclesResponse] = await Promise.all([
+                    Promise.race([
+                        API.getClients({ limit: 1000 }),
+                        new Promise((_, reject) => setTimeout(() => reject(new Error('timeout')), 2000))
+                    ]),
+                    Promise.race([
+                        API.getVehicles({ limit: 2000 }),
+                        new Promise((_, reject) => setTimeout(() => reject(new Error('timeout')), 2000))
+                    ])
+                ]);
+
+                const freshClients = normalizeClientListResponse(clientsResponse);
+                const freshVehicles = Array.isArray(vehiclesResponse)
+                    ? vehiclesResponse
+                    : (vehiclesResponse?.vehicles || vehiclesResponse?.items || vehiclesResponse?.results || []);
+
+                if (Array.isArray(freshClients) && freshClients.length > 0) {
+                    clientsList = freshClients;
+                }
+                if (Array.isArray(freshVehicles) && freshVehicles.length > 0) {
+                    vehiclesList = freshVehicles;
+                }
+
+                const refreshedDropdownState = buildClientDropdownState(clientsList, vehiclesList);
+                window.invoiceClientRateMap = refreshedDropdownState.rateMap;
+
+                const clientSelect = document.getElementById('invoice-client');
+                if (clientSelect) {
+                    const previousValue = String(clientSelect.value || '');
+                    clientSelect.innerHTML = `<option value="">-- Select Client --</option>${refreshedDropdownState.clientOptionsHtml}`;
+                    const optionExists = Array.from(clientSelect.options || []).some((opt) => String(opt.value) === previousValue);
+                    if (previousValue && optionExists) {
+                        clientSelect.value = previousValue;
+                    }
+                }
+            } catch (error) {
+                // Keep using cached list if network is slow/unavailable.
+            }
+        });
+
+        // Refresh next invoice number asynchronously and update placeholder/hint.
+        Promise.resolve().then(async () => {
+            try {
+                nextInvoiceNo = await getNextInvoiceNumber();
+                const invoiceNoInput = document.getElementById('invoice-no');
+                if (invoiceNoInput) {
+                    invoiceNoInput.placeholder = `Leave blank for auto: ${nextInvoiceNo}`;
+                }
+                const invoiceNoHint = document.getElementById('invoice-no-hint');
+                if (invoiceNoHint) {
+                    invoiceNoHint.textContent = `If empty, ${nextInvoiceNo} will be used automatically.`;
+                }
+            } catch (error) {
+                // Keep local estimate when API is unavailable.
             }
         });
         
@@ -3197,19 +3247,28 @@ function updateInvoicePreview() {
 // UTILITY FUNCTIONS
 // ============================================ //
 
+function getNextInvoiceNumberFromLocal() {
+    let maxNum = 0;
+    const merged = mergeUniqueInvoices(Array.isArray(invoicesData) ? invoicesData : [], loadCachedInvoices());
+    merged.forEach((inv) => {
+        const num = parseInt(String(inv?.invoiceNo || '').replace('CT', ''), 10);
+        if (Number.isFinite(num) && num > maxNum) {
+            maxNum = num;
+        }
+    });
+    return 'CT' + String(maxNum + 1).padStart(4, '0');
+}
+
 // Get next invoice number
 async function getNextInvoiceNumber() {
     try {
-        const response = await API.getNextInvoiceNumber();
+        const response = await Promise.race([
+            API.getNextInvoiceNumber(),
+            new Promise((_, reject) => setTimeout(() => reject(new Error('timeout')), 1500))
+        ]);
         return response.invoiceNo || 'CT0001';
     } catch (error) {
-        // Generate next number from existing invoices
-        let maxNum = 0;
-        invoicesData.forEach(inv => {
-            const num = parseInt(inv.invoiceNo?.replace('CT', '') || '0');
-            if (num > maxNum) maxNum = num;
-        });
-        return 'CT' + (maxNum + 1).toString().padStart(4, '0');
+        return getNextInvoiceNumberFromLocal();
     }
 }
 
@@ -3437,6 +3496,7 @@ window.saveVendorInvoicesToStorage = saveVendorInvoicesToStorage;
 window.loadVendorInvoicesFromStorage = loadVendorInvoicesFromStorage;
 window.showGenerateInvoiceModal = showGenerateInvoiceModal;
 window.viewInvoicePDF = viewInvoicePDF;
+window.downloadInvoicePDF = downloadInvoicePDF;
 window.showInvoiceDetails = showInvoiceDetails;
 window.recordPaymentForInvoice = recordPaymentForInvoice;
 window.exportInvoices = exportInvoices;

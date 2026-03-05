@@ -698,7 +698,7 @@ async function renderClientPayments(contentEl) {
                         <option value="Cash">Cash</option>
                         <option value="Cheque">Cheque</option>
                     </select>
-                    <input type="text" id="search-payments" placeholder="Search..." 
+                    <input type="text" id="search-payments" placeholder="Search (client, invoice, ref, amount)..." 
                         onkeyup="filterPaymentTransactions()" style="width: 200px; padding: 8px; border: 1px solid var(--gray-300); border-radius: 4px;">
                 </div>
             </div>
@@ -855,6 +855,48 @@ function matchesMonthRangeFilterPayment(dateValue, monthFrom, monthTo) {
     return true;
 }
 
+function extractSearchNumbers(searchText) {
+    const text = String(searchText || '');
+    const matches = text.match(/\d[\d,]*(?:\.\d+)?/g) || [];
+    return matches
+        .map((raw) => Number(String(raw).replace(/,/g, '')))
+        .filter((value) => Number.isFinite(value));
+}
+
+function amountMatchesSearchValue(amount, searchText, numericTargets = []) {
+    const value = Number(amount || 0);
+    if (!Number.isFinite(value)) return false;
+
+    const absolute = Math.abs(value);
+    const queryDigits = String(searchText || '').replace(/[^0-9.]/g, '');
+
+    if (numericTargets.length > 0) {
+        const epsilon = 0.01;
+        if (numericTargets.some((target) => Math.abs(absolute - target) < epsilon)) {
+            return true;
+        }
+    }
+
+    if (!queryDigits) return false;
+
+    return (
+        absolute.toFixed(2).includes(queryDigits) ||
+        String(Math.round(absolute)).includes(queryDigits) ||
+        String(absolute).includes(queryDigits)
+    );
+}
+    const numericTargets = extractSearchNumbers(searchText);
+
+    const filtered = window.allPayments.filter(payment => {
+            const matchesAmount = [
+                payment.totalAmount,
+                payment.amount,
+                payment.netAmount,
+                payment.taxAmount,
+                payment.invoiceAmount,
+                payment.paidAmount
+            ].some((value) => amountMatchesSearchValue(value, searchText, numericTargets));
+
 function resetPaymentFilters() {
     return resetPaymentFiltersWithAutoApply(true);
 }
@@ -901,7 +943,7 @@ function renderVendorPayments(contentEl) {
                         <option value="Cash">Cash</option>
                         <option value="Cheque">Cheque</option>
                     </select>
-                    <input type="text" id="vendor-payment-search" placeholder="Search..." 
+                    <input type="text" id="vendor-payment-search" placeholder="Search (vendor, invoice, ref, amount)..." 
                         onkeyup="filterVendorPayments()" style="width: 200px; padding: 8px; border: 1px solid var(--gray-300); border-radius: 4px;">
                 </div>
             </div>
@@ -2978,6 +3020,8 @@ function filterVendorPayments(skipAutoReset = false) {
 
     const source = (window.allVendorPayments || []).filter(isVendorPaymentRecord);
 
+    const numericTargets = extractSearchNumbers(searchText);
+
     const filtered = source.filter(payment => {
         const vendorName = payment.vendorName || '';
         if (!vendorName) return false;
@@ -2991,7 +3035,10 @@ function filterVendorPayments(skipAutoReset = false) {
             String(payment.invoiceNo || '').toLowerCase().includes(search) ||
             String(payment.invoiceMonth || '').toLowerCase().includes(search) ||
             vendorName.toLowerCase().includes(search) ||
-            String(payment.method || '').toLowerCase().includes(search);
+            String(payment.method || '').toLowerCase().includes(search) ||
+            amountMatchesSearchValue(payment.amount, searchText, numericTargets) ||
+            amountMatchesSearchValue(payment.netAmount, searchText, numericTargets) ||
+            amountMatchesSearchValue(payment.taxDeduction, searchText, numericTargets);
 
         return matchesVendor && matchesMonth && matchesMethod && matchesSearch;
     });

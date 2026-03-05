@@ -713,10 +713,26 @@ function navigateToPage(page) {
 }
 
 // Load page content
-async function loadPage(page) {
+async function loadPage(page, options = {}) {
     // Expose loadPage globally for SPA routing
     window.loadPage = loadPage;
+    const forceReload = Boolean(options?.forceReload);
     const normalizedPage = String(page || 'dashboard').trim().toLowerCase();
+
+    if (!forceReload && window.__pageLoadInFlight && window.__pageLoadInFlightPage === normalizedPage) {
+        return;
+    }
+
+    const currentPage = sessionStorage.getItem('currentPage') || '';
+    if (!forceReload && currentPage === normalizedPage && window.__pageLoadedOnce) {
+        return;
+    }
+
+    const loadToken = (window.__pageLoadToken || 0) + 1;
+    window.__pageLoadToken = loadToken;
+    window.__pageLoadInFlight = true;
+    window.__pageLoadInFlightPage = normalizedPage;
+
     sessionStorage.setItem('currentPage', normalizedPage);
     setActiveNavItem(normalizedPage);
     
@@ -815,6 +831,10 @@ async function loadPage(page) {
                 await invokeLoader('loadDashboard');
                 break;
         }
+
+        if (window.__pageLoadToken === loadToken) {
+            window.__pageLoadedOnce = true;
+        }
     } catch (error) {
         console.error(`Error loading page '${normalizedPage}':`, error);
         showNotification(`Could not load ${pageTitle}.`, 'error');
@@ -828,6 +848,11 @@ async function loadPage(page) {
                     </div>
                 </div>
             `;
+        }
+    } finally {
+        if (window.__pageLoadToken === loadToken) {
+            window.__pageLoadInFlight = false;
+            window.__pageLoadInFlightPage = '';
         }
     }
 }
