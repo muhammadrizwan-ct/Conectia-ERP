@@ -2518,10 +2518,27 @@ async function showGenerateInvoiceModal() {
             return [];
         };
 
+        const getClientDisplayName = (client = {}) => normalizeName(
+            client?.name ||
+            client?.clientName ||
+            client?.client_name ||
+            client?.companyName ||
+            client?.businessName ||
+            client?.client ||
+            ''
+        );
+
+        const isClientActive = (client = {}) => {
+            const rawStatus = client?.status ?? client?.clientStatus ?? client?.isActive;
+            if (typeof rawStatus === 'boolean') return rawStatus;
+            const status = String(rawStatus || 'active').trim().toLowerCase();
+            return !status || status === 'active';
+        };
+
         const buildClientDropdownState = (sourceClients, sourceVehicles) => {
             const clientNameToRecord = new Map();
             (sourceClients || []).forEach((client) => {
-                const name = normalizeName(client?.name || client?.clientName || client?.companyName || client?.businessName || '');
+                const name = getClientDisplayName(client);
                 if (!name) return;
                 if (!clientNameToRecord.has(name.toLowerCase())) {
                     clientNameToRecord.set(name.toLowerCase(), client);
@@ -2530,12 +2547,9 @@ async function showGenerateInvoiceModal() {
 
             const uniqueClientMap = new Map();
             (sourceClients || [])
-                .filter((client) => {
-                    const status = String(client?.status || client?.clientStatus || 'Active').toLowerCase();
-                    return !status || status === 'active';
-                })
+                .filter((client) => isClientActive(client))
                 .forEach((client) => {
-                    const clientName = normalizeName(client?.name || client?.clientName || client?.companyName || client?.businessName || '');
+                    const clientName = getClientDisplayName(client);
                     if (!clientName) return;
                     const key = normalizeNameLower(clientName);
                     if (!uniqueClientMap.has(key)) {
@@ -2588,6 +2602,17 @@ async function showGenerateInvoiceModal() {
         let vehiclesList = Array.isArray(window.allVehicles) && window.allVehicles.length > 0
             ? window.allVehicles
             : loadVehiclesFromStorage();
+
+        if ((!Array.isArray(clientsList) || clientsList.length === 0) && typeof fetchClientsFromSupabase === 'function') {
+            try {
+                clientsList = await Promise.race([
+                    fetchClientsFromSupabase(),
+                    new Promise((_, reject) => setTimeout(() => reject(new Error('timeout')), 2500))
+                ]);
+            } catch (error) {
+                // Continue with whatever local data we have
+            }
+        }
 
         const initialDropdownState = buildClientDropdownState(clientsList, vehiclesList);
         window.invoiceClientRateMap = initialDropdownState.rateMap;
@@ -2887,6 +2912,9 @@ async function showGenerateInvoiceModal() {
         // Hydrate fresh clients/vehicles asynchronously without blocking modal open.
         Promise.resolve().then(async () => {
             try {
+                let freshClients = [];
+                let freshVehicles = [];
+
                 const [clientsResponse, vehiclesResponse] = await Promise.all([
                     Promise.race([
                         API.getClients({ limit: 1000 }),
@@ -2898,10 +2926,30 @@ async function showGenerateInvoiceModal() {
                     ])
                 ]);
 
-                const freshClients = normalizeClientListResponse(clientsResponse);
-                const freshVehicles = Array.isArray(vehiclesResponse)
+                freshClients = normalizeClientListResponse(clientsResponse);
+                freshVehicles = Array.isArray(vehiclesResponse)
                     ? vehiclesResponse
                     : (vehiclesResponse?.vehicles || vehiclesResponse?.items || vehiclesResponse?.results || []);
+
+                if ((!Array.isArray(freshClients) || freshClients.length === 0) && typeof fetchClientsFromSupabase === 'function') {
+                    const supabaseClients = await Promise.race([
+                        fetchClientsFromSupabase(),
+                        new Promise((_, reject) => setTimeout(() => reject(new Error('timeout')), 2500))
+                    ]);
+                    if (Array.isArray(supabaseClients) && supabaseClients.length > 0) {
+                        freshClients = supabaseClients;
+                    }
+                }
+
+                if ((!Array.isArray(freshVehicles) || freshVehicles.length === 0) && typeof fetchVehiclesFromSupabase === 'function') {
+                    const supabaseVehicles = await Promise.race([
+                        fetchVehiclesFromSupabase(),
+                        new Promise((_, reject) => setTimeout(() => reject(new Error('timeout')), 2500))
+                    ]);
+                    if (Array.isArray(supabaseVehicles) && supabaseVehicles.length > 0) {
+                        freshVehicles = supabaseVehicles;
+                    }
+                }
 
                 if (Array.isArray(freshClients) && freshClients.length > 0) {
                     clientsList = freshClients;
