@@ -1,6 +1,12 @@
 // --- Supabase Integration ---
 var supabase = window.supabaseClient;
 
+function isUuidValue(value) {
+    const text = String(value || '').trim();
+    if (!text) return false;
+    return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(text);
+}
+
 function normalizeVehicleFromSupabase(vehicle = {}) {
     if (!vehicle || typeof vehicle !== 'object') return vehicle;
 
@@ -45,6 +51,8 @@ async function fetchVehiclesFromSupabase() {
 
 // Save (insert) a new vehicle to Supabase
 async function saveVehicleToSupabase(vehicle) {
+    const safeClientId = isUuidValue(vehicle?.clientId) ? String(vehicle.clientId).trim() : undefined;
+
     const buildDatabasePayload = (source) => ({
         registrationno: source.registrationNo,
         brand: source.brand,
@@ -55,7 +63,7 @@ async function saveVehicleToSupabase(vehicle) {
         status: source.status,
         imeino: source.imeiNo,
         simno: source.simNo,
-        client_id: source.clientId
+        client_id: safeClientId
     });
 
     const buildSnakeCasePayload = (source) => ({
@@ -98,7 +106,7 @@ async function saveVehicleToSupabase(vehicle) {
             vehicleName: vehicle.vehicleName,
             imeiNo: vehicle.imeiNo,
             simNo: vehicle.simNo,
-            clientId: vehicle.clientId,
+            clientId: safeClientId,
             installDate: vehicle.installDate,
             installationDate: vehicle.installationDate,
             unitRate: vehicle.unitRate,
@@ -132,6 +140,20 @@ async function saveVehicleToSupabase(vehicle) {
 
             lastError = error;
             const message = String(error.message || '');
+
+            if (/invalid input syntax for type uuid/i.test(message)) {
+                if ('client_id' in payload) {
+                    delete payload.client_id;
+                    attempts += 1;
+                    continue;
+                }
+                if ('clientId' in payload) {
+                    delete payload.clientId;
+                    attempts += 1;
+                    continue;
+                }
+            }
+
             const missingColumnMatch = message.match(/Could not find the '([^']+)' column/i);
             if (!missingColumnMatch) {
                 break;
@@ -223,6 +245,26 @@ async function saveVehiclesToStorage(vehicle) {
     }
     // Insert single vehicle to Supabase
     return await saveVehicleToSupabase(vehicle);
+}
+
+async function saveVehiclesBatchToSupabase(vehicles = []) {
+    const source = Array.isArray(vehicles) ? vehicles : [];
+    const savedVehicles = [];
+    const failedVehicles = [];
+
+    for (const vehicle of source) {
+        const saved = await saveVehicleToSupabase(vehicle);
+        if (saved) {
+            savedVehicles.push(saved);
+        } else {
+            failedVehicles.push({
+                vehicle,
+                error: window.lastVehicleSaveError?.message || 'Unknown database error'
+            });
+        }
+    }
+
+    return { savedVehicles, failedVehicles };
 }
 
 function mergeVehiclesWithStorage(apiVehicles) {
@@ -1510,7 +1552,7 @@ function handleVehicleImportFile(event) {
     }
 
     const reader = new FileReader();
-    reader.onload = (loadEvent) => {
+    reader.onload = async (loadEvent) => {
         try {
             const arrayBuffer = loadEvent.target.result;
             const workbook = XLSX.read(arrayBuffer, { type: 'array', cellDates: true });
@@ -1535,12 +1577,16 @@ function handleVehicleImportFile(event) {
                 ...storedClients
             ];
             const clientRateMap = new Map();
+            const clientIdMap = new Map();
             allKnownClients.forEach((client) => {
                 const clientName = String(client?.name || client?.clientName || '').trim();
                 if (!clientName) return;
                 const key = clientName.toLowerCase();
                 if (!clientRateMap.has(key)) {
                     clientRateMap.set(key, resolveClientDefaultUnitPrice(client));
+                }
+                if (!clientIdMap.has(key)) {
+                    clientIdMap.set(key, client?.id || client?.client_id || client?.clientId || null);
                 }
             });
 
@@ -1576,6 +1622,7 @@ function handleVehicleImportFile(event) {
                 const modelYear = Number.parseInt(String(modelYearRaw).trim(), 10);
                 const installationDate = normalizeImportDate(installDateRaw);
                 const clientDefaultRate = clientRateMap.get(clientName.toLowerCase()) || 0;
+                const clientId = clientIdMap.get(clientName.toLowerCase()) || null;
                 const cleanedRate = Number.parseFloat(String(unitRateRaw).replace(/,/g, '').trim());
                 const effectiveRate = Number.isFinite(cleanedRate) && cleanedRate > 0 ? cleanedRate : clientDefaultRate;
                 const status = statusRaw || 'Active';
@@ -1631,6 +1678,7 @@ function handleVehicleImportFile(event) {
                     modelYear,
                     year: modelYear,
                     clientName,
+                    clientId,
                     status,
                     lastLocation: 'Not tracked',
                     mileage: 0,
@@ -1658,16 +1706,30 @@ function handleVehicleImportFile(event) {
                 return;
             }
 
-            window.allVehicles.push(...newVehicles);
-            saveVehiclesToStorage();
+            const { savedVehicles, failedVehicles } = await saveVehiclesBatchToSupabase(newVehicles);
+
+            if (savedVehicles.length > 0) {
+                try {
+                    window.allVehicles = await fetchVehiclesFromSupabase();
+                } catch (reloadError) {
+                    console.error('Failed to reload vehicles after import:', reloadError);
+                    window.allVehicles.push(...savedVehicles);
+                }
+            }
+
             applyFilters();
 
+            failedVehicles.forEach((failedItem) => {
+                const label = failedItem?.vehicle?.registrationNo || failedItem?.vehicle?.vehicleName || 'unknown';
+                skippedRows.push(`Not saved (${label}): ${failedItem.error}`);
+            });
+
             if (skippedRows.length > 0) {
-                showNotification(`Imported ${newVehicles.length} vehicles. Skipped ${skippedRows.length} rows.`, 'success');
+                showNotification(`Saved ${savedVehicles.length} vehicles. Skipped ${skippedRows.length} rows.`, savedVehicles.length > 0 ? 'success' : 'error');
                 console.warn('Vehicle import skipped rows:', skippedRows);
                 alert(skippedRows.slice(0, 12).join('\n'));
             } else {
-                showNotification(`Imported ${newVehicles.length} vehicles successfully!`, 'success');
+                showNotification(`Saved ${savedVehicles.length} vehicles successfully!`, 'success');
             }
         } catch (error) {
             console.error('Vehicle import error:', error);
