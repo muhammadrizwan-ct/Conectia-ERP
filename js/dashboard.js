@@ -15,8 +15,15 @@ function isDashboardStillActive() {
 }
 
 async function loadDashboard() {
-    // Clear header actions
-    document.getElementById('header-actions').innerHTML = '';
+    // Dashboard download actions
+    document.getElementById('header-actions').innerHTML = `
+        <button class="btn btn-sm btn-primary btn-export" onclick="exportDashboardPDF()" title="Download Dashboard PDF" aria-label="Download Dashboard PDF">
+            <i class="fas fa-file-pdf"></i>
+        </button>
+        <button class="btn btn-sm btn-success btn-export" onclick="exportDashboardExcel()" title="Download Dashboard Excel" aria-label="Download Dashboard Excel">
+            <i class="fas fa-file-excel"></i>
+        </button>
+    `;
     
     const contentEl = document.getElementById('content-body');
     
@@ -105,6 +112,143 @@ async function loadDashboard() {
         displayPaymentChart(paymentStatus);
     } catch (error) {
         console.warn('Dashboard error:', error);
+    }
+}
+
+function buildDashboardExportData() {
+    const selectedYear = Number(document.getElementById('revenue-year')?.value) || new Date().getFullYear();
+    const metrics = calculateDashboardMetrics();
+    const topClients = getTopClientsFromData(10);
+    const recentInvoices = getRecentInvoices(20);
+    const monthlyData = getMonthlySummaryFromData(selectedYear);
+    const paymentStatus = getPaymentStatus();
+
+    return {
+        selectedYear,
+        metrics,
+        topClients,
+        recentInvoices,
+        monthlyData,
+        paymentStatus,
+        generatedAt: new Date().toLocaleString('en-PK')
+    };
+}
+
+function exportDashboardExcel() {
+    if (typeof XLSX === 'undefined') {
+        showNotification('Excel library not loaded. Please refresh and try again.', 'error');
+        return;
+    }
+
+    try {
+        const data = buildDashboardExportData();
+
+        const summaryRows = [
+            { Metric: 'Generated At', Value: data.generatedAt },
+            { Metric: 'Year', Value: data.selectedYear },
+            { Metric: 'Total Clients', Value: data.metrics.totalClients || 0 },
+            { Metric: 'Active Vehicles', Value: data.metrics.activeVehicles || 0 },
+            { Metric: 'Monthly Revenue', Value: data.metrics.monthlyRevenue || 0 },
+            { Metric: 'Total Receivable', Value: data.metrics.totalPending || 0 },
+            { Metric: 'Collection Rate (%)', Value: data.metrics.collectionRate || 0 },
+            { Metric: 'Payment Status - Paid', Value: data.paymentStatus.paid || 0 },
+            { Metric: 'Payment Status - Pending', Value: data.paymentStatus.pending || 0 },
+            { Metric: 'Payment Status - Overdue', Value: data.paymentStatus.overdue || 0 }
+        ];
+
+        const topClientsRows = (data.topClients || []).map((item) => ({
+            Client: item.name || '-',
+            Vehicles: item.vehicleCount || 0,
+            Balance: item.balance || 0
+        }));
+
+        const monthlyRows = (data.monthlyData || []).map((item) => ({
+            Month: item.month,
+            Revenue: item.total || 0
+        }));
+
+        const invoicesRows = (data.recentInvoices || []).map((item) => ({
+            InvoiceNo: item.invoiceNo || '-',
+            Client: item.clientName || '-',
+            Date: item.invoiceDate || '-',
+            Amount: item.totalAmount || 0,
+            Status: item.status || '-'
+        }));
+
+        const workbook = XLSX.utils.book_new();
+        XLSX.utils.book_append_sheet(workbook, XLSX.utils.json_to_sheet(summaryRows), 'Summary');
+        XLSX.utils.book_append_sheet(workbook, XLSX.utils.json_to_sheet(topClientsRows), 'TopClients');
+        XLSX.utils.book_append_sheet(workbook, XLSX.utils.json_to_sheet(monthlyRows), 'MonthlyRevenue');
+        XLSX.utils.book_append_sheet(workbook, XLSX.utils.json_to_sheet(invoicesRows), 'RecentInvoices');
+
+        XLSX.writeFile(workbook, `dashboard_report_${Date.now()}.xlsx`);
+        showNotification('Dashboard Excel downloaded successfully', 'success');
+    } catch (error) {
+        console.error('Dashboard Excel export error:', error);
+        showNotification('Failed to download Dashboard Excel', 'error');
+    }
+}
+
+function exportDashboardPDF() {
+    const JsPdfConstructor =
+        (typeof window !== 'undefined' && window.jspdf && window.jspdf.jsPDF)
+        || (typeof jsPDF !== 'undefined' ? jsPDF : null);
+
+    if (!JsPdfConstructor) {
+        showNotification('PDF library not loaded. Please refresh and try again.', 'error');
+        return;
+    }
+
+    try {
+        const data = buildDashboardExportData();
+        const doc = new JsPdfConstructor({ orientation: 'landscape', unit: 'mm', format: 'a4' });
+
+        doc.setFontSize(14);
+        doc.text('Dashboard Report', 14, 12);
+        doc.setFontSize(10);
+        doc.text(`Generated: ${data.generatedAt}`, 14, 18);
+        doc.text(`Year: ${data.selectedYear}`, 14, 23);
+
+        const summaryRows = [
+            ['Total Clients', String(data.metrics.totalClients || 0)],
+            ['Active Vehicles', String(data.metrics.activeVehicles || 0)],
+            ['Monthly Revenue', formatPKR(data.metrics.monthlyRevenue || 0)],
+            ['Total Receivable', formatPKR(data.metrics.totalPending || 0)],
+            ['Collection Rate', `${data.metrics.collectionRate || 0}%`],
+            ['Paid/Pending/Overdue', `${data.paymentStatus.paid || 0} / ${data.paymentStatus.pending || 0} / ${data.paymentStatus.overdue || 0}`]
+        ];
+
+        if (typeof doc.autoTable === 'function') {
+            doc.autoTable({
+                startY: 28,
+                head: [['Metric', 'Value']],
+                body: summaryRows,
+                styles: { fontSize: 9 },
+                headStyles: { fillColor: [37, 99, 235] },
+                margin: { left: 14, right: 14 }
+            });
+
+            const topClientsRows = (data.topClients || []).slice(0, 10).map((item) => [
+                item.name || '-',
+                String(item.vehicleCount || 0),
+                formatPKR(item.balance || 0)
+            ]);
+
+            doc.autoTable({
+                startY: doc.lastAutoTable.finalY + 8,
+                head: [['Top Client', 'Vehicles', 'Balance']],
+                body: topClientsRows,
+                styles: { fontSize: 9 },
+                headStyles: { fillColor: [5, 150, 105] },
+                margin: { left: 14, right: 14 }
+            });
+        }
+
+        doc.save(`dashboard_report_${Date.now()}.pdf`);
+        showNotification('Dashboard PDF downloaded successfully', 'success');
+    } catch (error) {
+        console.error('Dashboard PDF export error:', error);
+        showNotification('Failed to download Dashboard PDF', 'error');
     }
 }
 
