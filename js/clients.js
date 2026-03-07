@@ -1,6 +1,7 @@
 // --- Supabase Integration ---
 var supabase = window.supabaseClient;
 const CLIENT_DEFAULT_RATE_STORAGE_KEY = 'vts_client_default_rates';
+const CLIENT_STATUS_STORAGE_KEY = 'vts_client_statuses';
 
 function loadClientDefaultRateMap() {
     try {
@@ -12,6 +13,101 @@ function loadClientDefaultRateMap() {
 
 function saveClientDefaultRateMap(map) {
     localStorage.setItem(CLIENT_DEFAULT_RATE_STORAGE_KEY, JSON.stringify(map || {}));
+}
+
+function loadClientStatusMap() {
+    try {
+        return JSON.parse(localStorage.getItem(CLIENT_STATUS_STORAGE_KEY) || '{}') || {};
+    } catch (error) {
+        return {};
+    }
+}
+
+function saveClientStatusMap(map) {
+    localStorage.setItem(CLIENT_STATUS_STORAGE_KEY, JSON.stringify(map || {}));
+}
+
+function normalizeClientStatus(status) {
+    const value = String(status || '').trim().toLowerCase();
+    return value === 'inactive' ? 'Inactive' : 'Active';
+}
+
+function resolveClientStatus(client = {}) {
+    const rawStatus = client.status
+        ?? client.client_status
+        ?? client.clientStatus
+        ?? client.is_active
+        ?? client.isActive;
+
+    if (typeof rawStatus === 'boolean') {
+        return rawStatus ? 'Active' : 'Inactive';
+    }
+
+    if (rawStatus === undefined || rawStatus === null || String(rawStatus).trim() === '') {
+        const storedStatus = getStoredClientStatus(client);
+        if (storedStatus) {
+            return storedStatus;
+        }
+    }
+
+    return normalizeClientStatus(rawStatus);
+}
+
+function toClientStatusBoolean(status) {
+    return normalizeClientStatus(status) === 'Active';
+}
+
+function buildClientStatusKeys(client = {}) {
+    const keys = [];
+    const rowId = String(client.id || '').trim();
+    const clientId = String(client.clientId || client.clientid || '').trim();
+    const name = String(client.name || '').trim().toLowerCase();
+
+    if (rowId) {
+        keys.push(`row:${rowId}`);
+    }
+    if (clientId) {
+        keys.push(`clientid:${clientId}`);
+    }
+    if (name) {
+        keys.push(`name:${name}`);
+    }
+
+    return keys;
+}
+
+function getStoredClientStatus(client = {}) {
+    const map = loadClientStatusMap();
+    const keys = buildClientStatusKeys(client);
+    for (const key of keys) {
+        if (Object.prototype.hasOwnProperty.call(map, key)) {
+            return normalizeClientStatus(map[key]);
+        }
+    }
+    return null;
+}
+
+function rememberClientStatus(client = {}, statusOverride) {
+    const status = normalizeClientStatus(statusOverride ?? client.status);
+    const map = loadClientStatusMap();
+    const keys = buildClientStatusKeys(client);
+
+    keys.forEach((key) => {
+        map[key] = status;
+    });
+
+    saveClientStatusMap(map);
+}
+
+function removeClientStatus(client = {}) {
+    const map = loadClientStatusMap();
+    const keys = buildClientStatusKeys(client);
+
+    keys.forEach((key) => {
+        delete map[key];
+    });
+
+    saveClientStatusMap(map);
 }
 
 function buildClientRateKeys(client = {}) {
@@ -74,7 +170,7 @@ async function fetchClientsFromSupabase() {
         vehicleCount: Number(client.vehicleCount ?? client.vehicle_count ?? 0) || 0,
         totalInvoices: Number(client.totalInvoices ?? client.total_invoices ?? 0) || 0,
         balance: Number(client.balance ?? 0) || 0,
-        status: client.status || 'Active'
+        status: resolveClientStatus(client)
         };
     });
 }
@@ -82,8 +178,10 @@ async function fetchClientsFromSupabase() {
 // Save (insert) a new client to Supabase
 async function saveClientToSupabase(client) {
     const normalizedDefaultUnitPrice = Number(client.defaultUnitPrice ?? client.default_unit_price ?? 0);
+    const normalizedStatus = normalizeClientStatus(client.status);
+    const statusAsBoolean = toClientStatusBoolean(normalizedStatus);
 
-    const buildSnakeCasePayload = (source) => ({
+    const buildSnakeCasePayload = (source, statusPatch = {}) => ({
         clientid: source.clientId,
         name: source.name,
         email: source.email,
@@ -93,7 +191,8 @@ async function saveClientToSupabase(client) {
         default_unit_price: normalizedDefaultUnitPrice,
         vehicle_count: source.vehicleCount,
         total_invoices: source.totalInvoices,
-        balance: source.balance
+        balance: source.balance,
+        ...statusPatch
     });
 
     const candidatePayloads = [
@@ -104,9 +203,14 @@ async function saveClientToSupabase(client) {
             phone: client.phone,
             address: client.address,
             ntn: client.ntn,
+            status: normalizedStatus,
             default_unit_price: normalizedDefaultUnitPrice
         },
-        buildSnakeCasePayload(client),
+        buildSnakeCasePayload(client, { status: normalizedStatus }),
+        buildSnakeCasePayload(client, { client_status: normalizedStatus }),
+        buildSnakeCasePayload(client, { clientStatus: normalizedStatus }),
+        buildSnakeCasePayload(client, { is_active: statusAsBoolean }),
+        buildSnakeCasePayload(client, { isActive: statusAsBoolean }),
         { ...client }
     ];
 
@@ -224,10 +328,16 @@ function escapeJsSingleQuote(value) {
         .replace(/'/g, "\\'");
 }
 
+function resolveClientPrimaryId(client = {}) {
+    return toComparableId(client.id || client.clientId || client.clientid);
+}
+
 async function updateClientInSupabase(clientId, updates) {
     const normalizedDefaultUnitPrice = Number(updates.defaultUnitPrice ?? updates.default_unit_price ?? 0);
+    const normalizedStatus = normalizeClientStatus(updates.status);
+    const statusAsBoolean = toClientStatusBoolean(normalizedStatus);
 
-    const payload = {
+    const basePayload = {
         clientid: updates.clientId,
         name: updates.name,
         email: updates.email,
@@ -237,37 +347,131 @@ async function updateClientInSupabase(clientId, updates) {
         default_unit_price: normalizedDefaultUnitPrice
     };
 
-    const cleanPayload = Object.fromEntries(
-        Object.entries(payload).filter(([, value]) => value !== undefined)
-    );
+    const statusPatches = [
+        { status: normalizedStatus },
+        { client_status: normalizedStatus },
+        { clientStatus: normalizedStatus },
+        { is_active: statusAsBoolean },
+        { isActive: statusAsBoolean }
+    ];
 
-    const { data, error } = await supabase
-        .from('clients')
-        .update(cleanPayload)
-        .eq('id', clientId)
-        .select('*')
-        .single();
+    const candidatePayloads = statusPatches.map((statusPatch) => ({
+        ...basePayload,
+        ...statusPatch
+    }));
 
-    if (error) {
-        console.error('Supabase update error:', error);
-        return null;
+    const rawIdentifiers = [clientId, updates?.id, updates?.clientId, updates?.clientid];
+    const identifiers = [];
+    rawIdentifiers.forEach((value) => {
+        const normalized = toComparableId(value);
+        if (normalized && !identifiers.includes(normalized)) {
+            identifiers.push(normalized);
+        }
+    });
+
+    const matchers = [];
+    identifiers.forEach((value) => {
+        matchers.push({ column: 'id', value });
+        matchers.push({ column: 'clientid', value });
+    });
+
+    let lastError = null;
+
+    for (const rawPayload of candidatePayloads) {
+        const cleanPayload = Object.fromEntries(
+            Object.entries(rawPayload).filter(([, value]) => value !== undefined)
+        );
+
+        for (const matcher of matchers) {
+            let attempts = 0;
+
+            while (attempts < 12) {
+                const { data, error } = await supabase
+                    .from('clients')
+                    .update(cleanPayload)
+                    .eq(matcher.column, matcher.value)
+                    .select('*');
+
+                if (!error) {
+                    if (Array.isArray(data) && data.length > 0) {
+                        return data[0];
+                    }
+                    break;
+                }
+
+                lastError = error;
+                const message = String(error.message || '');
+
+                if (/invalid input syntax for type uuid/i.test(message) && matcher.column === 'id') {
+                    break;
+                }
+                if (/Could not find the 'id' column/i.test(message) && matcher.column === 'id') {
+                    break;
+                }
+                if (/Could not find the 'clientid' column/i.test(message) && matcher.column === 'clientid') {
+                    break;
+                }
+
+                const missingColumnMatch = message.match(/Could not find the '([^']+)' column/i);
+                if (!missingColumnMatch) {
+                    break;
+                }
+
+                const missingColumn = missingColumnMatch[1];
+                const matchingKey = Object.keys(cleanPayload).find((key) => key.toLowerCase() === missingColumn.toLowerCase());
+                if (!matchingKey) {
+                    break;
+                }
+
+                delete cleanPayload[matchingKey];
+                attempts += 1;
+            }
+        }
     }
 
-    return data || null;
+    if (lastError) {
+        console.error('Supabase update error:', lastError);
+    }
+    return null;
 }
 
 async function deleteClientFromSupabase(clientId) {
-    const { error } = await supabase
-        .from('clients')
-        .delete()
-        .eq('id', clientId);
+    const targetId = toComparableId(clientId);
+    const matchers = [
+        { column: 'id', value: targetId },
+        { column: 'clientid', value: targetId }
+    ];
 
-    if (error) {
-        console.error('Supabase delete error:', error);
-        return false;
+    let lastError = null;
+
+    for (const matcher of matchers) {
+        const { error } = await supabase
+            .from('clients')
+            .delete()
+            .eq(matcher.column, matcher.value);
+
+        if (error) {
+            lastError = error;
+            const message = String(error.message || '');
+            if (/invalid input syntax for type uuid/i.test(message) && matcher.column === 'id') {
+                continue;
+            }
+            if (/Could not find the 'id' column/i.test(message) && matcher.column === 'id') {
+                continue;
+            }
+            if (/Could not find the 'clientid' column/i.test(message) && matcher.column === 'clientid') {
+                continue;
+            }
+            continue;
+        }
+
+        return true;
     }
 
-    return true;
+    if (lastError) {
+        console.error('Supabase delete error:', lastError);
+    }
+    return false;
 }
 
 // Clients Module
@@ -437,7 +641,7 @@ function displayClientsTable(clients) {
     html += '</tr></thead><tbody>';
     
     clients.forEach(client => {
-        const clientPrimaryId = toComparableId(client.id);
+        const clientPrimaryId = resolveClientPrimaryId(client);
         const escapedClientPrimaryId = escapeJsSingleQuote(clientPrimaryId);
         const displayClientId = client.clientId || client.clientid || 'N/A';
         const statusText = String(client.status || 'Active');
@@ -710,6 +914,10 @@ async function saveNewClient(event) {
         ...newClientPayload,
         ...(savedClient || {})
     });
+    rememberClientStatus({
+        ...newClientPayload,
+        ...(savedClient || {})
+    }, newClientPayload.status);
 
     // Reload from Supabase so UI always reflects persisted state
     try {
@@ -741,7 +949,7 @@ function editClient(clientId) {
     }
 
     const targetId = toComparableId(clientId);
-    const client = window.allClients.find(c => toComparableId(c.id) === targetId);
+    const client = window.allClients.find(c => resolveClientPrimaryId(c) === targetId);
     if (!client) {
         alert('Client not found');
         return;
@@ -803,8 +1011,8 @@ function editClient(clientId) {
                 <div>
                     <label style="display: block; margin-bottom: 6px; font-weight: 600;">Status</label>
                     <select id="edit-client-status" style="width: 100%; padding: 10px; border: 1px solid var(--gray-300); border-radius: 4px; box-sizing: border-box;">
-                        <option value="Active" ${client.status === 'Active' ? 'selected' : ''}>Active</option>
-                        <option value="Inactive" ${client.status === 'Inactive' ? 'selected' : ''}>Inactive</option>
+                        <option value="Active" ${String(client.status || '').toLowerCase() !== 'inactive' ? 'selected' : ''}>Active</option>
+                        <option value="Inactive" ${String(client.status || '').toLowerCase() === 'inactive' ? 'selected' : ''}>Inactive</option>
                     </select>
                 </div>
                 
@@ -872,7 +1080,7 @@ async function updateClient(event, clientId) {
     }
     
     const targetId = toComparableId(clientId);
-    const clientIndex = window.allClients.findIndex(c => toComparableId(c.id) === targetId);
+    const clientIndex = window.allClients.findIndex(c => resolveClientPrimaryId(c) === targetId);
     if (clientIndex === -1) {
         showNotification('Client not found', 'error');
         return;
@@ -886,7 +1094,7 @@ async function updateClient(event, clientId) {
         address: address || 'Not specified',
         ntn: ntn || '',
         defaultUnitPrice: defaultUnitPrice,
-        status: status
+        status: normalizeClientStatus(status)
     };
 
     const updatedRow = await updateClientInSupabase(targetId, updatedClientPayload);
@@ -899,6 +1107,10 @@ async function updateClient(event, clientId) {
         ...updatedClientPayload,
         ...(updatedRow || {})
     });
+    rememberClientStatus({
+        ...updatedClientPayload,
+        ...(updatedRow || {})
+    }, updatedClientPayload.status);
 
     try {
         window.allClients = await fetchClientsFromSupabase();
@@ -924,7 +1136,7 @@ function deleteClient(clientId) {
     }
 
     const targetId = toComparableId(clientId);
-    const client = window.allClients.find(c => toComparableId(c.id) === targetId);
+    const client = window.allClients.find(c => resolveClientPrimaryId(c) === targetId);
     if (!client) {
         alert('Client not found');
         return;
@@ -968,7 +1180,7 @@ async function confirmDeleteClient(clientId) {
     }
 
     const targetId = toComparableId(clientId);
-    const existingClient = (window.allClients || []).find((c) => toComparableId(c.id) === targetId);
+    const existingClient = (window.allClients || []).find((c) => resolveClientPrimaryId(c) === targetId);
     const deleted = await deleteClientFromSupabase(targetId);
     if (!deleted) {
         showNotification('Client delete failed on Supabase.', 'error');
@@ -976,9 +1188,10 @@ async function confirmDeleteClient(clientId) {
     }
 
     // Remove client from list
-    window.allClients = window.allClients.filter(c => toComparableId(c.id) !== targetId);
+    window.allClients = window.allClients.filter(c => resolveClientPrimaryId(c) !== targetId);
     if (existingClient) {
         removeClientDefaultRate(existingClient);
+        removeClientStatus(existingClient);
     }
     
     // Update table

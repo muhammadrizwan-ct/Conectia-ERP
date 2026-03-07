@@ -976,6 +976,11 @@ function viewVehicleDetails(vehicleId) {
     }
 
     const vehicleModelYear = vehicle.modelYear || vehicle.year || (vehicle.installationDate || vehicle.installDate ? new Date(vehicle.installationDate || vehicle.installDate).getFullYear() : 'N/A');
+    const rawAddedDate = vehicle.installationDate || vehicle.installDate;
+    const parsedAddedDate = rawAddedDate ? new Date(rawAddedDate) : null;
+    const dateOfAddition = parsedAddedDate && !Number.isNaN(parsedAddedDate.getTime())
+        ? parsedAddedDate.toLocaleDateString()
+        : 'N/A';
     
     const modal = document.createElement('div');
     modal.id = 'view-vehicle-modal';
@@ -1039,13 +1044,18 @@ function viewVehicleDetails(vehicleId) {
                 </div>
                 
                 <div style="padding: 12px; background: var(--gray-50); border-radius: 4px;">
-                    <label style="display: block; font-size: 12px; color: var(--gray-500); font-weight: 600; margin-bottom: 4px;">Mileage</label>
-                    <p style="margin: 0; font-size: 16px; font-weight: 600; color: var(--gray-800);">${vehicle.mileage || '0'} km</p>
+                    <label style="display: block; font-size: 12px; color: var(--gray-500); font-weight: 600; margin-bottom: 4px;">IMEI No</label>
+                    <p style="margin: 0; font-size: 16px; font-weight: 600; color: var(--gray-800);">${vehicle.imeiNo || 'N/A'}</p>
                 </div>
                 
                 <div style="padding: 12px; background: var(--gray-50); border-radius: 4px;">
-                    <label style="display: block; font-size: 12px; color: var(--gray-500); font-weight: 600; margin-bottom: 4px;">Last Location</label>
-                    <p style="margin: 0; font-size: 16px; font-weight: 600; color: var(--gray-800);">${vehicle.lastLocation || 'N/A'}</p>
+                    <label style="display: block; font-size: 12px; color: var(--gray-500); font-weight: 600; margin-bottom: 4px;">SIM No</label>
+                    <p style="margin: 0; font-size: 16px; font-weight: 600; color: var(--gray-800);">${vehicle.simNo || 'N/A'}</p>
+                </div>
+
+                <div style="padding: 12px; background: var(--gray-50); border-radius: 4px;">
+                    <label style="display: block; font-size: 12px; color: var(--gray-500); font-weight: 600; margin-bottom: 4px;">Date of Addition</label>
+                    <p style="margin: 0; font-size: 16px; font-weight: 600; color: var(--gray-800);">${dateOfAddition}</p>
                 </div>
             </div>
             
@@ -1158,14 +1168,19 @@ function editVehicle(vehicleId) {
                 </div>
                 
                 <div>
-                    <label style="display: block; margin-bottom: 6px; font-weight: 600;">Installation Date *</label>
+                    <label style="display: block; margin-bottom: 6px; font-weight: 600;">Date of Addition *</label>
                     <input type="date" id="edit-vehicle-install-date" value="${existingInstallationDate}" required style="width: 100%; padding: 10px; border: 1px solid var(--gray-300); border-radius: 4px; box-sizing: border-box;">
-                    <small style="color: var(--gray-500); margin-top: 4px; display: block;">Installation date is pre-filled from saved data.</small>
+                    <small style="color: var(--gray-500); margin-top: 4px; display: block;">Date is pre-filled from saved data.</small>
                 </div>
                 
                 <div>
-                    <label style="display: block; margin-bottom: 6px; font-weight: 600;">Last Location</label>
-                    <input type="text" id="edit-vehicle-location" value="${vehicle.lastLocation || ''}" placeholder="e.g., Karachi" style="width: 100%; padding: 10px; border: 1px solid var(--gray-300); border-radius: 4px; box-sizing: border-box;">
+                    <label style="display: block; margin-bottom: 6px; font-weight: 600;">IMEI No</label>
+                    <input type="text" id="edit-vehicle-imei" value="${vehicle.imeiNo || ''}" placeholder="Enter IMEI number" style="width: 100%; padding: 10px; border: 1px solid var(--gray-300); border-radius: 4px; box-sizing: border-box;">
+                </div>
+
+                <div>
+                    <label style="display: block; margin-bottom: 6px; font-weight: 600;">SIM No</label>
+                    <input type="text" id="edit-vehicle-sim" value="${vehicle.simNo || ''}" placeholder="Enter SIM number" style="width: 100%; padding: 10px; border: 1px solid var(--gray-300); border-radius: 4px; box-sizing: border-box;">
                 </div>
                 
                 <div>
@@ -1240,7 +1255,8 @@ function saveEditedVehicle(event, vehicleId) {
     const category = document.getElementById('edit-vehicle-category').value;
     const clientName = document.getElementById('edit-vehicle-client').value;
     const installDate = document.getElementById('edit-vehicle-install-date').value;
-    const lastLocation = document.getElementById('edit-vehicle-location').value.trim();
+    const imeiNo = document.getElementById('edit-vehicle-imei').value.trim();
+    const simNo = document.getElementById('edit-vehicle-sim').value.trim();
     const status = document.getElementById('edit-vehicle-status').value;
     const resolvedCategory = (category || '').trim() || 'default';
     
@@ -1268,15 +1284,13 @@ function saveEditedVehicle(event, vehicleId) {
         }
         
         // Check for duplicate IMEI (excluding current vehicle)
-        const imei = currentVehicle.imeiNo;
-        if (window.allVehicles.some((v, idx) => idx !== vehicleIndex && v.imeiNo && v.imeiNo.trim().toLowerCase() === imei.toLowerCase())) {
+        if (imeiNo && window.allVehicles.some((v, idx) => idx !== vehicleIndex && v.imeiNo && v.imeiNo.trim().toLowerCase() === imeiNo.toLowerCase())) {
             showNotification('IMEI number already exists in another vehicle!', 'error');
             return;
         }
         
         // Check for duplicate SIM (excluding current vehicle)
-        const sim = currentVehicle.simNo;
-        if (window.allVehicles.some((v, idx) => idx !== vehicleIndex && v.simNo && v.simNo.trim().toLowerCase() === sim.toLowerCase())) {
+        if (simNo && window.allVehicles.some((v, idx) => idx !== vehicleIndex && v.simNo && v.simNo.trim().toLowerCase() === simNo.toLowerCase())) {
             showNotification('SIM number already exists in another vehicle!', 'error');
             return;
         }
@@ -1293,7 +1307,8 @@ function saveEditedVehicle(event, vehicleId) {
             clientName: clientName,
             installDate: finalInstallDate,
             installationDate: finalInstallDate,
-            lastLocation: lastLocation,
+            imeiNo: imeiNo,
+            simNo: simNo,
             status: status
         };
     }
