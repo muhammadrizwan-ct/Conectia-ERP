@@ -522,8 +522,9 @@ function displayCategoryChart(categoryData) {
             datasets: [{
                 label: 'Vehicles',
                 data: vehicleCounts,
-                backgroundColor: 'rgba(71, 85, 105, 0.7)',
-                borderColor: 'rgba(71, 85, 105, 1)',
+                backgroundColor: 'rgba(134, 239, 172, 0.9)',
+                hoverBackgroundColor: 'rgba(22, 163, 74, 0.9)',
+                borderColor: 'rgba(34, 197, 94, 1)',
                 borderWidth: 1,
                 borderRadius: 6
             }]
