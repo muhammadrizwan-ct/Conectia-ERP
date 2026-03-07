@@ -197,9 +197,11 @@ async function loadDashboard() {
                 <div class="card-header">
                     <h3>Payment Status</h3>
                 </div>
-                <div class="card-body">
-                    <canvas id="payment-chart"></canvas>
-                    <div id="payment-status-amounts" style="margin-top: 12px;"></div>
+                <div class="card-body" style="display: flex; flex-direction: column; gap: 8px;">
+                    <div style="height: 220px; max-height: 220px;">
+                        <canvas id="payment-chart"></canvas>
+                    </div>
+                    <div id="payment-status-amounts" style="margin-top: 4px;"></div>
                 </div>
             </div>
         </div>
@@ -608,10 +610,19 @@ function displayPaymentChart(paymentData) {
         options: {
             responsive: true,
             maintainAspectRatio: false,
+            cutout: '58%',
             plugins: {
                 legend: {
                     display: true,
-                    position: 'bottom'
+                    position: 'bottom',
+                    labels: {
+                        boxWidth: 10,
+                        boxHeight: 10,
+                        font: {
+                            size: 11
+                        },
+                        padding: 10
+                    }
                 },
                 tooltip: {
                     callbacks: {
@@ -629,18 +640,18 @@ function displayPaymentChart(paymentData) {
     const amountsEl = document.getElementById('payment-status-amounts');
     if (amountsEl) {
         amountsEl.innerHTML = `
-            <div style="display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px;">
-                <div style="padding: 8px; border-radius: 6px; background: rgba(5,150,105,0.08);">
-                    <div style="font-size: 11px; color: var(--gray-600);">Paid Amount</div>
-                    <div style="font-size: 13px; font-weight: 700; color: #047857;">${formatPKR(paidAmount)}</div>
+            <div style="display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 6px;">
+                <div style="padding: 6px; border-radius: 6px; background: rgba(5,150,105,0.08);">
+                    <div style="font-size: 10px; color: var(--gray-600);">Paid</div>
+                    <div style="font-size: 12px; font-weight: 700; color: #047857;">${formatPKR(paidAmount)}</div>
                 </div>
-                <div style="padding: 8px; border-radius: 6px; background: rgba(245,158,11,0.12);">
-                    <div style="font-size: 11px; color: var(--gray-600);">Pending Amount</div>
-                    <div style="font-size: 13px; font-weight: 700; color: #b45309;">${formatPKR(pendingAmount)}</div>
+                <div style="padding: 6px; border-radius: 6px; background: rgba(245,158,11,0.12);">
+                    <div style="font-size: 10px; color: var(--gray-600);">Pending</div>
+                    <div style="font-size: 12px; font-weight: 700; color: #b45309;">${formatPKR(pendingAmount)}</div>
                 </div>
-                <div style="padding: 8px; border-radius: 6px; background: rgba(220,38,38,0.1);">
-                    <div style="font-size: 11px; color: var(--gray-600);">Overdue Amount</div>
-                    <div style="font-size: 13px; font-weight: 700; color: #b91c1c;">${formatPKR(overdueAmount)}</div>
+                <div style="padding: 6px; border-radius: 6px; background: rgba(220,38,38,0.1);">
+                    <div style="font-size: 10px; color: var(--gray-600);">Overdue</div>
+                    <div style="font-size: 12px; font-weight: 700; color: #b91c1c;">${formatPKR(overdueAmount)}</div>
                 </div>
             </div>
         `;
