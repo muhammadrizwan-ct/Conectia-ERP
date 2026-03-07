@@ -142,7 +142,7 @@ async function loadReports() {
                     <div style="display: flex; align-items: center; gap: 8px;"><span style="width: 10px; height: 10px; border-radius: 50%; background: #22c55e; display: inline-block;"></span><small>Payment Made</small></div>
                     <div style="display: flex; align-items: center; gap: 8px;"><span style="width: 10px; height: 10px; border-radius: 50%; background: #d1d5db; display: inline-block;"></span><small>No Invoice</small></div>
                 </div>
-                <div id="reports-client-status-table" class="table-responsive"></div>
+                <div id="reports-client-status-graph" class="table-responsive"></div>
             </div>
         </div>
     `;
@@ -263,23 +263,37 @@ async function populateReportsClientFilter() {
 }
 
 async function renderClientMonthStatusReport() {
-    const tableEl = document.getElementById('reports-client-status-table');
+    const graphEl = document.getElementById('reports-client-status-graph');
     const summaryEl = document.getElementById('reports-client-status-summary');
     const filterEl = document.getElementById('reports-client-filter');
-    if (!tableEl || !summaryEl) return;
+    if (!graphEl || !summaryEl) return;
 
-    const invoices = await getReportsInvoices();
+    const [invoices, clients] = await Promise.all([getReportsInvoices(), getReportsClients()]);
     const months = getLast12MonthKeys();
     const monthKeySet = new Set(months.map((m) => m.key));
     const selectedClient = filterEl?.value || '';
 
     const filteredInvoices = invoices.filter((inv) => {
-        if (!inv?.clientName) return false;
+        const invClient = String(inv?.clientName || '').trim();
+        if (!invClient) return false;
         if (!selectedClient) return true;
-        return String(inv.clientName).trim() === selectedClient;
+        return invClient === selectedClient;
     }).filter((inv) => monthKeySet.has(getInvoiceMonthKey(inv)));
 
-    const clientNames = Array.from(new Set(filteredInvoices.map((inv) => String(inv.clientName).trim()))).sort((a, b) => a.localeCompare(b));
+    const allClientNames = new Set();
+    clients.forEach((client) => {
+        const name = String(client?.name || '').trim();
+        if (!name) return;
+        if (selectedClient && name !== selectedClient) return;
+        allClientNames.add(name);
+    });
+    filteredInvoices.forEach((inv) => {
+        const name = String(inv?.clientName || '').trim();
+        if (!name) return;
+        if (selectedClient && name !== selectedClient) return;
+        allClientNames.add(name);
+    });
+    const clientNames = Array.from(allClientNames).sort((a, b) => a.localeCompare(b));
 
     const totalAmount = filteredInvoices.reduce((sum, inv) => sum + (Number(inv.totalAmount) || 0), 0);
     const totalPaid = filteredInvoices.reduce((sum, inv) => sum + (Number(inv.paidAmount) || 0), 0);
@@ -307,20 +321,21 @@ async function renderClientMonthStatusReport() {
     `;
 
     if (clientNames.length === 0) {
-        tableEl.innerHTML = '<p style="text-align:center; color: var(--gray-500); padding: 20px;">No client invoice data found for the selected filter.</p>';
+        graphEl.innerHTML = '<p style="text-align:center; color: var(--gray-500); padding: 20px;">No client data found for the selected filter.</p>';
         return;
     }
 
-    let html = '<table class="data-table">';
-    html += '<thead><tr><th>Client</th>';
+    let html = '<div style="overflow:auto; border: 1px solid var(--gray-200); border-radius: 8px;">';
+    html += '<table class="data-table" style="min-width: 980px;">';
+    html += '<thead><tr><th style="min-width: 220px;">Client</th>';
     months.forEach((m) => {
         html += `<th style="text-align:center;">${m.label}</th>`;
     });
-    html += '<th style="text-align:right;">Payments</th>';
+    html += '<th style="text-align:right; min-width: 140px;">Payments Made</th>';
     html += '</tr></thead><tbody>';
 
     clientNames.forEach((clientName) => {
-        const clientInvoices = filteredInvoices.filter((inv) => String(inv.clientName).trim() === clientName);
+        const clientInvoices = filteredInvoices.filter((inv) => String(inv.clientName || '').trim() === clientName);
         const byMonth = {};
 
         clientInvoices.forEach((inv) => {
@@ -332,12 +347,12 @@ async function renderClientMonthStatusReport() {
 
         const clientPayments = clientInvoices.reduce((sum, inv) => sum + (Number(inv.paidAmount) || 0), 0);
 
-        html += '<tr>';
+        html += '<tr style="height: 42px;">';
         html += `<td><strong>${clientName}</strong></td>`;
 
         months.forEach((m) => {
             const list = byMonth[m.key] || [];
-            let dotColor = '#d1d5db';
+            let cellColor = '#d1d5db';
             let tooltip = 'No invoice';
 
             if (list.length > 0) {
@@ -348,16 +363,16 @@ async function renderClientMonthStatusReport() {
                 });
 
                 if (hasPaid) {
-                    dotColor = '#22c55e';
+                    cellColor = '#22c55e';
                     tooltip = 'Payment made';
                 } else {
-                    dotColor = '#facc15';
+                    cellColor = '#facc15';
                     tooltip = 'Pending invoice';
                 }
             }
 
-            html += `<td style="text-align:center;">
-                <span title="${tooltip}" style="display:inline-block; width:12px; height:12px; border-radius:50%; background:${dotColor};"></span>
+            html += `<td style="text-align:center; padding: 6px 4px;">
+                <div title="${tooltip}" style="width: 100%; height: 16px; border-radius: 4px; background:${cellColor}; border: 1px solid rgba(0,0,0,0.08);"></div>
             </td>`;
         });
 
@@ -366,7 +381,8 @@ async function renderClientMonthStatusReport() {
     });
 
     html += '</tbody></table>';
-    tableEl.innerHTML = html;
+    html += '</div>';
+    graphEl.innerHTML = html;
 }
 
 function setAIQueryExample(text) {
