@@ -175,7 +175,7 @@ async function loadDashboard() {
             
             <div class="card">
                 <div class="card-header">
-                    <h3>Top Clients</h3>
+                    <h3>Top Pending Clients</h3>
                 </div>
                 <div class="card-body">
                     <div id="top-clients-list"></div>
@@ -277,8 +277,8 @@ function exportDashboardExcel() {
 
         const topClientsRows = (data.topClients || []).map((item) => ({
             Client: item.name || '-',
-            Vehicles: item.vehicleCount || 0,
-            Balance: item.balance || 0
+            OpenInvoices: item.invoiceCount || 0,
+            PendingAmount: item.balance || 0
         }));
 
         const monthlyRows = (data.monthlyData || []).map((item) => ({
@@ -340,13 +340,13 @@ function exportDashboardPDF() {
 
             const topClientsRows = (data.topClients || []).slice(0, 10).map((item) => [
                 item.name || '-',
-                String(item.vehicleCount || 0),
+                String(item.invoiceCount || 0),
                 formatPKR(item.balance || 0)
             ]);
 
             doc.autoTable({
                 startY: doc.lastAutoTable.finalY + 8,
-                head: [['Top Client', 'Vehicles', 'Balance']],
+                head: [['Top Client', 'Open Invoices', 'Pending Amount']],
                 body: topClientsRows,
                 styles: { fontSize: 9 },
                 headStyles: { fillColor: [5, 150, 105] },
@@ -428,9 +428,9 @@ function displayTopClients(clients) {
             <div style="display: flex; align-items: center; justify-content: space-between; padding: 8px; border-bottom: 1px solid var(--gray-200);">
                 <div>
                     <div style="font-weight: 600;">${client.name}</div>
-                    <div style="font-size: 12px; color: var(--gray-500);">${client.vehicleCount || 0} vehicles</div>
+                    <div style="font-size: 12px; color: var(--gray-500);">${client.invoiceCount || 0} open invoices</div>
                 </div>
-                <div style="font-weight: 700; color: ${client.balance > 0 ? 'var(--danger)' : 'var(--success)'};">
+                <div style="font-weight: 700; color: var(--danger);">
                     ${formatPKR(client.balance || 0)}
                 </div>
             </div>
@@ -522,9 +522,9 @@ function displayCategoryChart(categoryData) {
             datasets: [{
                 label: 'Vehicles',
                 data: vehicleCounts,
-                backgroundColor: 'rgba(134, 239, 172, 0.9)',
-                hoverBackgroundColor: 'rgba(22, 163, 74, 0.9)',
-                borderColor: 'rgba(34, 197, 94, 1)',
+                backgroundColor: 'rgba(74, 222, 128, 0.9)',
+                hoverBackgroundColor: 'rgba(21, 128, 61, 0.9)',
+                borderColor: 'rgba(22, 163, 74, 1)',
                 borderWidth: 1,
                 borderRadius: 6
             }]
@@ -733,34 +733,44 @@ function calculateDashboardMetrics(dataStore = getDashboardStore(), selectedMont
 // Get top clients from actual data
 function getTopClientsFromData(limit = 5, dataStore = getDashboardStore()) {
     const invoices = Array.isArray(dataStore.invoices) ? dataStore.invoices : [];
-    
-    // Group invoices by client
+
+    // Group outstanding balances by client.
     const clientData = {};
-    invoices.forEach(inv => {
+    invoices.forEach((inv) => {
         const clientName = inv.clientName || inv.client_name || 'Unknown';
         if (!clientData[clientName]) {
             clientData[clientName] = {
                 name: clientName,
-                totalAmount: 0,
-                paidAmount: 0,
-                vehicleCount: 0
+                pendingAmount: 0,
+                invoiceCount: 0
             };
         }
+
+        const totalAmount = Number(inv.totalAmount ?? inv.total ?? inv.amount ?? inv.invoiceAmount ?? inv.invoice_amount ?? 0) || 0;
+        const detailsBalance = Number(inv?.details?.balance);
+        const explicitBalance = Number(inv.balance ?? inv.pendingAmount ?? inv.pending_amount ?? detailsBalance);
         const detailsPaid = Number(inv?.details?.paidAmount ?? inv?.details?.paid_amount ?? 0) || 0;
-        clientData[clientName].totalAmount += Number(inv.totalAmount ?? inv.total ?? inv.amount ?? 0) || 0;
-        clientData[clientName].paidAmount += Number(inv.paidAmount ?? inv.paid_amount ?? detailsPaid ?? 0) || 0;
-        clientData[clientName].vehicleCount += Number(inv.vehicleCount) || 1;
+        const paidAmount = Number(inv.paidAmount ?? inv.paid_amount ?? inv.receivedAmount ?? detailsPaid ?? 0) || 0;
+
+        const pendingAmount = Number.isFinite(explicitBalance)
+            ? Math.max(0, explicitBalance)
+            : Math.max(0, totalAmount - paidAmount);
+
+        if (pendingAmount <= 0) return;
+
+        clientData[clientName].pendingAmount += pendingAmount;
+        clientData[clientName].invoiceCount += 1;
     });
-    
-    // Convert to array and sort by total amount
+
+    // Sort by highest pending balances.
     const topClients = Object.values(clientData)
-        .sort((a, b) => b.totalAmount - a.totalAmount)
+        .sort((a, b) => b.pendingAmount - a.pendingAmount)
         .slice(0, limit)
         .map((client, idx) => ({
             id: idx + 1,
             name: client.name,
-            vehicleCount: client.vehicleCount,
-            balance: client.totalAmount - client.paidAmount
+            invoiceCount: client.invoiceCount,
+            balance: client.pendingAmount
         }));
     
     return topClients;
