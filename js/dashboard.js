@@ -14,6 +14,15 @@ function isDashboardStillActive() {
     return (sessionStorage.getItem('currentPage') || '') === 'dashboard';
 }
 
+function getDashboardStore() {
+    return window.dashboardDataStore || {
+        clients: [],
+        vehicles: [],
+        invoices: [],
+        payments: []
+    };
+}
+
 function getCurrentMonthKey() {
     const now = new Date();
     return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
@@ -55,7 +64,7 @@ function isDateInMonthKey(date, monthKey) {
     return toMonthKeyFromDate(date) === monthKey;
 }
 
-function collectDashboardMonthKeys(dataStore = window.dashboardDataStore || readDashboardLocalData()) {
+function collectDashboardMonthKeys(dataStore = getDashboardStore()) {
     const keys = new Set();
 
     const addFromRecords = (records = [], dateFields = []) => {
@@ -78,7 +87,7 @@ function collectDashboardMonthKeys(dataStore = window.dashboardDataStore || read
     return Array.from(keys).sort((a, b) => b.localeCompare(a));
 }
 
-function buildDashboardMonthOptions(selectedMonthKey, dataStore = window.dashboardDataStore || readDashboardLocalData()) {
+function buildDashboardMonthOptions(selectedMonthKey, dataStore = getDashboardStore()) {
     const monthKeys = collectDashboardMonthKeys(dataStore);
     return monthKeys.map((key) => {
         const selectedAttr = key === selectedMonthKey ? 'selected' : '';
@@ -86,87 +95,32 @@ function buildDashboardMonthOptions(selectedMonthKey, dataStore = window.dashboa
     }).join('');
 }
 
-function normalizeArrayResponse(response, keys = []) {
-    if (Array.isArray(response)) return response;
-    if (!response || typeof response !== 'object') return [];
-
-    for (const key of keys) {
-        if (Array.isArray(response[key])) {
-            return response[key];
-        }
-    }
-
-    const firstArray = Object.values(response).find(Array.isArray);
-    return Array.isArray(firstArray) ? firstArray : [];
-}
-
-function normalizePaymentStatusResponse(response) {
-    if (!response || typeof response !== 'object') {
-        return { paid: 0, pending: 0, overdue: 0 };
-    }
-
-    return {
-        paid: Number(response.paid ?? response.Paid ?? 0) || 0,
-        pending: Number(response.pending ?? response.Pending ?? 0) || 0,
-        overdue: Number(response.overdue ?? response.Overdue ?? 0) || 0
-    };
-}
-
-async function resolveDashboardSource(apiCall, fallbackValue, normalizeFn) {
-    try {
-        const value = await apiCall();
-        return typeof normalizeFn === 'function' ? normalizeFn(value) : value;
-    } catch (error) {
-        return typeof fallbackValue === 'function' ? fallbackValue() : fallbackValue;
-    }
-}
-
-function readDashboardLocalData() {
-    const parseSafe = (key) => {
-        try {
-            const raw = localStorage.getItem(key);
-            const parsed = raw ? JSON.parse(raw) : [];
-            return Array.isArray(parsed) ? parsed : [];
-        } catch (error) {
-            return [];
-        }
-    };
-
-    return {
-        clients: parseSafe(STORAGE_KEYS.CLIENTS),
-        vehicles: parseSafe(STORAGE_KEYS.VEHICLES),
-        invoices: parseSafe(STORAGE_KEYS.INVOICES),
-        payments: parseSafe(STORAGE_KEYS.PAYMENTS)
-    };
-}
-
 async function hydrateDashboardDataStore() {
-    const local = readDashboardLocalData();
     const store = {
-        clients: [...local.clients],
-        vehicles: [...local.vehicles],
-        invoices: [...local.invoices],
-        payments: [...local.payments]
+        clients: [],
+        vehicles: [],
+        invoices: [],
+        payments: []
     };
 
     const settleList = await Promise.allSettled([
-        (typeof fetchClientsFromSupabase === 'function') ? withTimeout(fetchClientsFromSupabase(), 2500) : Promise.resolve([]),
-        (typeof fetchVehiclesFromSupabase === 'function') ? withTimeout(fetchVehiclesFromSupabase(), 2500) : Promise.resolve([]),
-        (typeof fetchInvoicesFromSupabase === 'function') ? withTimeout(fetchInvoicesFromSupabase(), 2500) : Promise.resolve([]),
-        (typeof fetchPaymentsFromSupabase === 'function') ? withTimeout(fetchPaymentsFromSupabase(), 2500) : Promise.resolve([])
+        (typeof fetchClientsFromSupabase === 'function') ? withTimeout(fetchClientsFromSupabase(), 5000) : Promise.resolve([]),
+        (typeof fetchVehiclesFromSupabase === 'function') ? withTimeout(fetchVehiclesFromSupabase(), 5000) : Promise.resolve([]),
+        (typeof fetchInvoicesFromSupabase === 'function') ? withTimeout(fetchInvoicesFromSupabase(), 5000) : Promise.resolve([]),
+        (typeof fetchPaymentsFromSupabase === 'function') ? withTimeout(fetchPaymentsFromSupabase(), 5000) : Promise.resolve([])
     ]);
 
     const [clientsRes, vehiclesRes, invoicesRes, paymentsRes] = settleList;
-    if (clientsRes.status === 'fulfilled' && Array.isArray(clientsRes.value) && clientsRes.value.length > 0) {
+    if (clientsRes.status === 'fulfilled' && Array.isArray(clientsRes.value)) {
         store.clients = clientsRes.value;
     }
-    if (vehiclesRes.status === 'fulfilled' && Array.isArray(vehiclesRes.value) && vehiclesRes.value.length > 0) {
+    if (vehiclesRes.status === 'fulfilled' && Array.isArray(vehiclesRes.value)) {
         store.vehicles = vehiclesRes.value;
     }
-    if (invoicesRes.status === 'fulfilled' && Array.isArray(invoicesRes.value) && invoicesRes.value.length > 0) {
+    if (invoicesRes.status === 'fulfilled' && Array.isArray(invoicesRes.value)) {
         store.invoices = invoicesRes.value;
     }
-    if (paymentsRes.status === 'fulfilled' && Array.isArray(paymentsRes.value) && paymentsRes.value.length > 0) {
+    if (paymentsRes.status === 'fulfilled' && Array.isArray(paymentsRes.value)) {
         store.payments = paymentsRes.value;
     }
 
@@ -257,30 +211,9 @@ async function loadDashboard() {
         const selectedMonthKey = document.getElementById('dashboard-month-filter')?.value || getCurrentMonthKey();
 
         const [topClients, monthlyData, paymentStatus] = await Promise.all([
-            resolveDashboardSource(
-                () => {
-                    if (typeof API?.getTopClients !== 'function') throw new Error('Missing API.getTopClients');
-                    return withTimeout(API.getTopClients(5), 2000);
-                },
-                () => getTopClientsFromData(5, dataStore),
-                (response) => normalizeArrayResponse(response, ['clients', 'items', 'data'])
-            ),
-            resolveDashboardSource(
-                () => {
-                    if (typeof API?.getMonthlySummary !== 'function') throw new Error('Missing API.getMonthlySummary');
-                    return withTimeout(API.getMonthlySummary(selectedYear), 2000);
-                },
-                () => getMonthlySummaryFromData(selectedYear, dataStore),
-                (response) => normalizeArrayResponse(response, ['summary', 'months', 'items', 'data'])
-            ),
-            resolveDashboardSource(
-                () => {
-                    if (typeof API?.getPaymentStatus !== 'function') throw new Error('Missing API.getPaymentStatus');
-                    return withTimeout(API.getPaymentStatus(), 2000);
-                },
-                () => getPaymentStatus(dataStore),
-                normalizePaymentStatusResponse
-            )
+            Promise.resolve(getTopClientsFromData(5, dataStore)),
+            Promise.resolve(getMonthlySummaryFromData(selectedYear, dataStore)),
+            Promise.resolve(getPaymentStatus(dataStore))
         ]);
 
         const metrics = calculateDashboardMetrics(dataStore, selectedMonthKey);
@@ -304,7 +237,6 @@ function buildDashboardExportData() {
     const selectedYear = Number(document.getElementById('revenue-year')?.value) || new Date().getFullYear();
     const metrics = calculateDashboardMetrics();
     const topClients = getTopClientsFromData(10);
-    const recentInvoices = getRecentInvoices(20);
     const monthlyData = getMonthlySummaryFromData(selectedYear);
     const paymentStatus = getPaymentStatus();
 
@@ -312,7 +244,6 @@ function buildDashboardExportData() {
         selectedYear,
         metrics,
         topClients,
-        recentInvoices,
         monthlyData,
         paymentStatus,
         generatedAt: new Date().toLocaleString('en-PK')
@@ -352,19 +283,10 @@ function exportDashboardExcel() {
             Revenue: item.total || 0
         }));
 
-        const invoicesRows = (data.recentInvoices || []).map((item) => ({
-            InvoiceNo: item.invoiceNo || '-',
-            Client: item.clientName || '-',
-            Date: item.invoiceDate || '-',
-            Amount: item.totalAmount || 0,
-            Status: item.status || '-'
-        }));
-
         const workbook = XLSX.utils.book_new();
         XLSX.utils.book_append_sheet(workbook, XLSX.utils.json_to_sheet(summaryRows), 'Summary');
         XLSX.utils.book_append_sheet(workbook, XLSX.utils.json_to_sheet(topClientsRows), 'TopClients');
         XLSX.utils.book_append_sheet(workbook, XLSX.utils.json_to_sheet(monthlyRows), 'MonthlyRevenue');
-        XLSX.utils.book_append_sheet(workbook, XLSX.utils.json_to_sheet(invoicesRows), 'RecentInvoices');
 
         XLSX.writeFile(workbook, `dashboard_report_${Date.now()}.xlsx`);
         showNotification('Dashboard Excel downloaded successfully', 'success');
@@ -574,7 +496,11 @@ function displayCategoryChart(categoryData) {
     const clientsChartData = getClientsChartData();
     
     if (clientsChartData.length === 0) {
-        clientsChartData.push({ name: 'No Data', vehicleCount: 1, monthlyPayments: 0 });
+        if (dashboardCategoryChart) {
+            dashboardCategoryChart.destroy();
+            dashboardCategoryChart = null;
+        }
+        return;
     }
     
     const clientLabels = clientsChartData.map(c => 
@@ -696,7 +622,7 @@ function displayPaymentChart(paymentData) {
 }
 
 // Calculate dashboard metrics from actual data
-function calculateDashboardMetrics(dataStore = window.dashboardDataStore || readDashboardLocalData(), selectedMonthKey = getCurrentMonthKey()) {
+function calculateDashboardMetrics(dataStore = getDashboardStore(), selectedMonthKey = getCurrentMonthKey()) {
     const clients = Array.isArray(dataStore.clients) ? dataStore.clients : [];
     const invoices = Array.isArray(dataStore.invoices) ? dataStore.invoices : [];
     const vehicles = Array.isArray(dataStore.vehicles) ? dataStore.vehicles : [];
@@ -724,18 +650,20 @@ function calculateDashboardMetrics(dataStore = window.dashboardDataStore || read
 
     // Revenue and pending for selected month
     const monthlyRevenue = monthInvoices.reduce((sum, inv) => {
-        const totalAmount = Number(inv.totalAmount ?? inv.amount ?? inv.invoiceAmount ?? inv.invoice_amount ?? 0) || 0;
+        const totalAmount = Number(inv.totalAmount ?? inv.total ?? inv.amount ?? inv.invoiceAmount ?? inv.invoice_amount ?? 0) || 0;
         return sum + totalAmount;
     }, 0);
 
     const totalPending = monthInvoices.reduce((sum, inv) => {
-        const explicitBalance = Number(inv.balance ?? inv.pendingAmount ?? inv.pending_amount);
+        const detailsBalance = Number(inv?.details?.balance);
+        const explicitBalance = Number(inv.balance ?? inv.pendingAmount ?? inv.pending_amount ?? detailsBalance);
         if (Number.isFinite(explicitBalance)) {
             return sum + Math.max(0, explicitBalance);
         }
 
-        const totalAmount = Number(inv.totalAmount ?? inv.amount ?? inv.invoiceAmount ?? inv.invoice_amount ?? 0) || 0;
-        const paidAmount = Number(inv.paidAmount ?? inv.paid_amount ?? inv.receivedAmount ?? 0) || 0;
+        const totalAmount = Number(inv.totalAmount ?? inv.total ?? inv.amount ?? inv.invoiceAmount ?? inv.invoice_amount ?? 0) || 0;
+        const detailsPaid = Number(inv?.details?.paidAmount ?? inv?.details?.paid_amount ?? 0) || 0;
+        const paidAmount = Number(inv.paidAmount ?? inv.paid_amount ?? inv.receivedAmount ?? detailsPaid ?? 0) || 0;
         const pending = totalAmount - paidAmount;
         return sum + Math.max(0, pending);
     }, 0);
@@ -760,13 +688,13 @@ function calculateDashboardMetrics(dataStore = window.dashboardDataStore || read
 }
 
 // Get top clients from actual data
-function getTopClientsFromData(limit = 5, dataStore = window.dashboardDataStore || readDashboardLocalData()) {
+function getTopClientsFromData(limit = 5, dataStore = getDashboardStore()) {
     const invoices = Array.isArray(dataStore.invoices) ? dataStore.invoices : [];
     
     // Group invoices by client
     const clientData = {};
     invoices.forEach(inv => {
-        const clientName = inv.clientName || 'Unknown';
+        const clientName = inv.clientName || inv.client_name || 'Unknown';
         if (!clientData[clientName]) {
             clientData[clientName] = {
                 name: clientName,
@@ -775,8 +703,9 @@ function getTopClientsFromData(limit = 5, dataStore = window.dashboardDataStore 
                 vehicleCount: 0
             };
         }
-        clientData[clientName].totalAmount += Number(inv.totalAmount) || 0;
-        clientData[clientName].paidAmount += Number(inv.paidAmount) || 0;
+        const detailsPaid = Number(inv?.details?.paidAmount ?? inv?.details?.paid_amount ?? 0) || 0;
+        clientData[clientName].totalAmount += Number(inv.totalAmount ?? inv.total ?? inv.amount ?? 0) || 0;
+        clientData[clientName].paidAmount += Number(inv.paidAmount ?? inv.paid_amount ?? detailsPaid ?? 0) || 0;
         clientData[clientName].vehicleCount += Number(inv.vehicleCount) || 1;
     });
     
@@ -795,14 +724,14 @@ function getTopClientsFromData(limit = 5, dataStore = window.dashboardDataStore 
 }
 
 // Get clients chart data with vehicle and payment info
-function getClientsChartData(limit = 10, dataStore = window.dashboardDataStore || readDashboardLocalData()) {
+function getClientsChartData(limit = 10, dataStore = getDashboardStore()) {
     const vehicles = Array.isArray(dataStore.vehicles) ? dataStore.vehicles : [];
     const payments = Array.isArray(dataStore.payments) ? dataStore.payments : [];
     
     // Group vehicles by client
     const clientData = {};
     vehicles.forEach(vehicle => {
-        const clientName = vehicle.clientName || 'Unknown';
+        const clientName = vehicle.clientName || vehicle.clientname || vehicle.client_name || 'Unknown';
         if (!clientData[clientName]) {
             clientData[clientName] = {
                 name: clientName,
@@ -818,7 +747,7 @@ function getClientsChartData(limit = 10, dataStore = window.dashboardDataStore |
     const currentYear = new Date().getFullYear();
     
     payments.forEach(payment => {
-        const paymentDate = new Date(payment.paymentDate);
+        const paymentDate = new Date(payment.paymentDate || payment.date || payment.created_at || payment.createdAt || '');
         if (paymentDate.getMonth() + 1 === currentMonth && paymentDate.getFullYear() === currentYear) {
             if (payment.lineItems && payment.lineItems.length > 0) {
                 payment.lineItems.forEach(item => {
@@ -832,6 +761,16 @@ function getClientsChartData(limit = 10, dataStore = window.dashboardDataStore |
                     }
                     clientData[clientName].monthlyPayments += Number(item.allocatedAmount) || 0;
                 });
+            } else {
+                const clientName = payment.clientName || payment.client_name || 'Unknown';
+                if (!clientData[clientName]) {
+                    clientData[clientName] = {
+                        name: clientName,
+                        vehicleCount: 0,
+                        monthlyPayments: 0
+                    };
+                }
+                clientData[clientName].monthlyPayments += Number(payment.netAmount ?? payment.net_amount ?? payment.amount ?? payment.paid_amount ?? 0) || 0;
             }
         }
     });
@@ -841,7 +780,7 @@ function getClientsChartData(limit = 10, dataStore = window.dashboardDataStore |
         .slice(0, limit);
 }
 // Get payment status from actual data
-function getPaymentStatus(dataStore = window.dashboardDataStore || readDashboardLocalData()) {
+function getPaymentStatus(dataStore = getDashboardStore()) {
     const invoices = Array.isArray(dataStore.invoices) ? dataStore.invoices : [];
     
     let paid = 0;
@@ -849,10 +788,11 @@ function getPaymentStatus(dataStore = window.dashboardDataStore || readDashboard
     let overdue = 0;
     
     invoices.forEach(inv => {
-        if (inv.status === 'Paid') {
+        const status = String(inv.status || '').trim().toLowerCase();
+        if (status === 'paid') {
             paid++;
-        } else if (inv.status === 'Pending') {
-            const dueDate = new Date(inv.dueDate);
+        } else if (status === 'pending' || status === 'partial' || !status) {
+            const dueDate = new Date(inv.dueDate || inv.due_date || '');
             if (dueDate < new Date()) {
                 overdue++;
             } else {
@@ -867,7 +807,7 @@ function getPaymentStatus(dataStore = window.dashboardDataStore || readDashboard
 }
 
 // Get monthly summary from actual payment data
-function getMonthlySummaryFromData(year = new Date().getFullYear(), dataStore = window.dashboardDataStore || readDashboardLocalData()) {
+function getMonthlySummaryFromData(year = new Date().getFullYear(), dataStore = getDashboardStore()) {
     const payments = Array.isArray(dataStore.payments) ? dataStore.payments : [];
     
     // Initialize monthly totals
@@ -875,10 +815,11 @@ function getMonthlySummaryFromData(year = new Date().getFullYear(), dataStore = 
     
     // Sum payments by month
     payments.forEach(payment => {
-        const paymentDate = new Date(payment.paymentDate);
+        const paymentDate = new Date(payment.paymentDate || payment.date || payment.created_at || payment.createdAt || '');
+        if (Number.isNaN(paymentDate.getTime())) return;
         if (paymentDate.getFullYear() === year) {
             const month = paymentDate.getMonth();
-            const amount = Number(payment.netAmount ?? payment.amount ?? payment.totalAmount ?? 0);
+            const amount = Number(payment.netAmount ?? payment.net_amount ?? payment.amount ?? payment.paid_amount ?? payment.totalAmount ?? 0) || 0;
             monthlyTotals[month] += amount;
         }
     });
