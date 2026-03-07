@@ -175,7 +175,7 @@ async function loadDashboard() {
             
             <div class="card">
                 <div class="card-header">
-                    <h3>Top Clients</h3>
+                    <h3>Top Pending Clients</h3>
                 </div>
                 <div class="card-body">
                     <div id="top-clients-list"></div>
@@ -197,9 +197,11 @@ async function loadDashboard() {
                 <div class="card-header">
                     <h3>Payment Status</h3>
                 </div>
-                <div class="card-body">
-                    <canvas id="payment-chart"></canvas>
-                    <div id="payment-status-amounts" style="margin-top: 12px;"></div>
+                <div class="card-body" style="display: flex; flex-direction: column; gap: 8px;">
+                    <div style="height: 220px; max-height: 220px;">
+                        <canvas id="payment-chart"></canvas>
+                    </div>
+                    <div id="payment-status-amounts" style="margin-top: 4px;"></div>
                 </div>
             </div>
         </div>
@@ -275,8 +277,8 @@ function exportDashboardExcel() {
 
         const topClientsRows = (data.topClients || []).map((item) => ({
             Client: item.name || '-',
-            Vehicles: item.vehicleCount || 0,
-            Balance: item.balance || 0
+            OpenInvoices: item.invoiceCount || 0,
+            PendingAmount: item.balance || 0
         }));
 
         const monthlyRows = (data.monthlyData || []).map((item) => ({
@@ -338,13 +340,13 @@ function exportDashboardPDF() {
 
             const topClientsRows = (data.topClients || []).slice(0, 10).map((item) => [
                 item.name || '-',
-                String(item.vehicleCount || 0),
+                String(item.invoiceCount || 0),
                 formatPKR(item.balance || 0)
             ]);
 
             doc.autoTable({
                 startY: doc.lastAutoTable.finalY + 8,
-                head: [['Top Client', 'Vehicles', 'Balance']],
+                head: [['Top Client', 'Open Invoices', 'Pending Amount']],
                 body: topClientsRows,
                 styles: { fontSize: 9 },
                 headStyles: { fillColor: [5, 150, 105] },
@@ -426,9 +428,9 @@ function displayTopClients(clients) {
             <div style="display: flex; align-items: center; justify-content: space-between; padding: 8px; border-bottom: 1px solid var(--gray-200);">
                 <div>
                     <div style="font-weight: 600;">${client.name}</div>
-                    <div style="font-size: 12px; color: var(--gray-500);">${client.vehicleCount || 0} vehicles</div>
+                    <div style="font-size: 12px; color: var(--gray-500);">${client.invoiceCount || 0} open invoices</div>
                 </div>
-                <div style="font-weight: 700; color: ${client.balance > 0 ? 'var(--danger)' : 'var(--success)'};">
+                <div style="font-weight: 700; color: var(--danger);">
                     ${formatPKR(client.balance || 0)}
                 </div>
             </div>
@@ -509,11 +511,6 @@ function displayCategoryChart(categoryData) {
     );
     const vehicleCounts = clientsChartData.map(c => c.vehicleCount);
     
-    const colors = [
-        '#2563eb', '#059669', '#d97706', '#dc2626', '#7c3aed',
-        '#db2777', '#0891b2', '#7c2d12', '#4c0519', '#1e293b'
-    ];
-    
     if (dashboardCategoryChart) {
         dashboardCategoryChart.destroy();
     }
@@ -525,8 +522,9 @@ function displayCategoryChart(categoryData) {
             datasets: [{
                 label: 'Vehicles',
                 data: vehicleCounts,
-                backgroundColor: colors.slice(0, clientsChartData.length),
-                borderColor: '#fff',
+                backgroundColor: 'rgba(59, 130, 246, 0.9)',
+                hoverBackgroundColor: 'rgba(29, 78, 216, 0.9)',
+                borderColor: 'rgba(37, 99, 235, 1)',
                 borderWidth: 1,
                 borderRadius: 6
             }]
@@ -534,6 +532,7 @@ function displayCategoryChart(categoryData) {
         options: {
             responsive: true,
             maintainAspectRatio: false,
+            indexAxis: 'y',
             plugins: {
                 legend: {
                     display: false,
@@ -555,9 +554,18 @@ function displayCategoryChart(categoryData) {
             },
             scales: {
                 y: {
+                    ticks: {
+                        color: '#334155',
+                        font: {
+                            size: 11
+                        }
+                    }
+                },
+                x: {
                     beginAtZero: true,
                     ticks: {
-                        precision: 0
+                        precision: 0,
+                        color: '#475569'
                     }
                 }
             }
@@ -608,10 +616,19 @@ function displayPaymentChart(paymentData) {
         options: {
             responsive: true,
             maintainAspectRatio: false,
+            cutout: '58%',
             plugins: {
                 legend: {
                     display: true,
-                    position: 'bottom'
+                    position: 'bottom',
+                    labels: {
+                        boxWidth: 10,
+                        boxHeight: 10,
+                        font: {
+                            size: 11
+                        },
+                        padding: 10
+                    }
                 },
                 tooltip: {
                     callbacks: {
@@ -629,18 +646,18 @@ function displayPaymentChart(paymentData) {
     const amountsEl = document.getElementById('payment-status-amounts');
     if (amountsEl) {
         amountsEl.innerHTML = `
-            <div style="display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px;">
-                <div style="padding: 8px; border-radius: 6px; background: rgba(5,150,105,0.08);">
-                    <div style="font-size: 11px; color: var(--gray-600);">Paid Amount</div>
-                    <div style="font-size: 13px; font-weight: 700; color: #047857;">${formatPKR(paidAmount)}</div>
+            <div style="display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 6px;">
+                <div style="padding: 6px; border-radius: 6px; background: rgba(5,150,105,0.08);">
+                    <div style="font-size: 10px; color: var(--gray-600);">Paid</div>
+                    <div style="font-size: 12px; font-weight: 700; color: #047857;">${formatPKR(paidAmount)}</div>
                 </div>
-                <div style="padding: 8px; border-radius: 6px; background: rgba(245,158,11,0.12);">
-                    <div style="font-size: 11px; color: var(--gray-600);">Pending Amount</div>
-                    <div style="font-size: 13px; font-weight: 700; color: #b45309;">${formatPKR(pendingAmount)}</div>
+                <div style="padding: 6px; border-radius: 6px; background: rgba(245,158,11,0.12);">
+                    <div style="font-size: 10px; color: var(--gray-600);">Pending</div>
+                    <div style="font-size: 12px; font-weight: 700; color: #b45309;">${formatPKR(pendingAmount)}</div>
                 </div>
-                <div style="padding: 8px; border-radius: 6px; background: rgba(220,38,38,0.1);">
-                    <div style="font-size: 11px; color: var(--gray-600);">Overdue Amount</div>
-                    <div style="font-size: 13px; font-weight: 700; color: #b91c1c;">${formatPKR(overdueAmount)}</div>
+                <div style="padding: 6px; border-radius: 6px; background: rgba(220,38,38,0.1);">
+                    <div style="font-size: 10px; color: var(--gray-600);">Overdue</div>
+                    <div style="font-size: 12px; font-weight: 700; color: #b91c1c;">${formatPKR(overdueAmount)}</div>
                 </div>
             </div>
         `;
@@ -716,34 +733,44 @@ function calculateDashboardMetrics(dataStore = getDashboardStore(), selectedMont
 // Get top clients from actual data
 function getTopClientsFromData(limit = 5, dataStore = getDashboardStore()) {
     const invoices = Array.isArray(dataStore.invoices) ? dataStore.invoices : [];
-    
-    // Group invoices by client
+
+    // Group outstanding balances by client.
     const clientData = {};
-    invoices.forEach(inv => {
+    invoices.forEach((inv) => {
         const clientName = inv.clientName || inv.client_name || 'Unknown';
         if (!clientData[clientName]) {
             clientData[clientName] = {
                 name: clientName,
-                totalAmount: 0,
-                paidAmount: 0,
-                vehicleCount: 0
+                pendingAmount: 0,
+                invoiceCount: 0
             };
         }
+
+        const totalAmount = Number(inv.totalAmount ?? inv.total ?? inv.amount ?? inv.invoiceAmount ?? inv.invoice_amount ?? 0) || 0;
+        const detailsBalance = Number(inv?.details?.balance);
+        const explicitBalance = Number(inv.balance ?? inv.pendingAmount ?? inv.pending_amount ?? detailsBalance);
         const detailsPaid = Number(inv?.details?.paidAmount ?? inv?.details?.paid_amount ?? 0) || 0;
-        clientData[clientName].totalAmount += Number(inv.totalAmount ?? inv.total ?? inv.amount ?? 0) || 0;
-        clientData[clientName].paidAmount += Number(inv.paidAmount ?? inv.paid_amount ?? detailsPaid ?? 0) || 0;
-        clientData[clientName].vehicleCount += Number(inv.vehicleCount) || 1;
+        const paidAmount = Number(inv.paidAmount ?? inv.paid_amount ?? inv.receivedAmount ?? detailsPaid ?? 0) || 0;
+
+        const pendingAmount = Number.isFinite(explicitBalance)
+            ? Math.max(0, explicitBalance)
+            : Math.max(0, totalAmount - paidAmount);
+
+        if (pendingAmount <= 0) return;
+
+        clientData[clientName].pendingAmount += pendingAmount;
+        clientData[clientName].invoiceCount += 1;
     });
-    
-    // Convert to array and sort by total amount
+
+    // Sort by highest pending balances.
     const topClients = Object.values(clientData)
-        .sort((a, b) => b.totalAmount - a.totalAmount)
+        .sort((a, b) => b.pendingAmount - a.pendingAmount)
         .slice(0, limit)
         .map((client, idx) => ({
             id: idx + 1,
             name: client.name,
-            vehicleCount: client.vehicleCount,
-            balance: client.totalAmount - client.paidAmount
+            invoiceCount: client.invoiceCount,
+            balance: client.pendingAmount
         }));
     
     return topClients;
