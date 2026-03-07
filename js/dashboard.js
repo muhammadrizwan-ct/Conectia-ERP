@@ -199,6 +199,7 @@ async function loadDashboard() {
                 </div>
                 <div class="card-body">
                     <canvas id="payment-chart"></canvas>
+                    <div id="payment-status-amounts" style="margin-top: 12px;"></div>
                 </div>
             </div>
         </div>
@@ -581,8 +582,12 @@ function displayPaymentChart(paymentData) {
     
     const chartCtx = ctx.getContext('2d');
     
-    const labels = Object.keys(paymentData);
-    const data = Object.values(paymentData);
+    const paidAmount = Number(paymentData?.paid ?? 0) || 0;
+    const pendingAmount = Number(paymentData?.pending ?? 0) || 0;
+    const overdueAmount = Number(paymentData?.overdue ?? 0) || 0;
+
+    const labels = ['Paid', 'Pending', 'Overdue'];
+    const data = [paidAmount, pendingAmount, overdueAmount];
     const colors = ['#059669', '#f59e0b', '#dc2626'];
     
     if (dashboardPaymentChart) {
@@ -590,15 +595,14 @@ function displayPaymentChart(paymentData) {
     }
 
     dashboardPaymentChart = new Chart(chartCtx, {
-        type: 'bar',
+        type: 'doughnut',
         data: {
-            labels: labels.map(l => l.charAt(0).toUpperCase() + l.slice(1)),
+            labels,
             datasets: [{
-                label: 'Invoices',
                 data: data,
                 backgroundColor: colors,
-                borderRadius: 6,
-                borderWidth: 1
+                borderColor: '#ffffff',
+                borderWidth: 2
             }]
         },
         options: {
@@ -606,19 +610,41 @@ function displayPaymentChart(paymentData) {
             maintainAspectRatio: false,
             plugins: {
                 legend: {
-                    display: false
-                }
-            },
-            scales: {
-                y: {
-                    beginAtZero: true,
-                    ticks: {
-                        precision: 0
+                    display: true,
+                    position: 'bottom'
+                },
+                tooltip: {
+                    callbacks: {
+                        label: function(context) {
+                            const label = context.label || '';
+                            const amount = Number(context.raw || 0) || 0;
+                            return `${label}: ${formatPKR(amount)}`;
+                        }
                     }
                 }
             }
         }
     });
+
+    const amountsEl = document.getElementById('payment-status-amounts');
+    if (amountsEl) {
+        amountsEl.innerHTML = `
+            <div style="display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px;">
+                <div style="padding: 8px; border-radius: 6px; background: rgba(5,150,105,0.08);">
+                    <div style="font-size: 11px; color: var(--gray-600);">Paid Amount</div>
+                    <div style="font-size: 13px; font-weight: 700; color: #047857;">${formatPKR(paidAmount)}</div>
+                </div>
+                <div style="padding: 8px; border-radius: 6px; background: rgba(245,158,11,0.12);">
+                    <div style="font-size: 11px; color: var(--gray-600);">Pending Amount</div>
+                    <div style="font-size: 13px; font-weight: 700; color: #b45309;">${formatPKR(pendingAmount)}</div>
+                </div>
+                <div style="padding: 8px; border-radius: 6px; background: rgba(220,38,38,0.1);">
+                    <div style="font-size: 11px; color: var(--gray-600);">Overdue Amount</div>
+                    <div style="font-size: 13px; font-weight: 700; color: #b91c1c;">${formatPKR(overdueAmount)}</div>
+                </div>
+            </div>
+        `;
+    }
 }
 
 // Calculate dashboard metrics from actual data
@@ -786,24 +812,40 @@ function getPaymentStatus(dataStore = getDashboardStore()) {
     let paid = 0;
     let pending = 0;
     let overdue = 0;
+    let paidCount = 0;
+    let pendingCount = 0;
+    let overdueCount = 0;
     
     invoices.forEach(inv => {
+        const totalAmount = Number(inv.totalAmount ?? inv.total ?? inv.amount ?? inv.invoiceAmount ?? inv.invoice_amount ?? 0) || 0;
+        const detailsBalance = Number(inv?.details?.balance);
+        const explicitBalance = Number(inv.balance ?? inv.pendingAmount ?? inv.pending_amount ?? detailsBalance);
+        const detailsPaid = Number(inv?.details?.paidAmount ?? inv?.details?.paid_amount ?? 0) || 0;
+        const paidAmount = Number(inv.paidAmount ?? inv.paid_amount ?? inv.receivedAmount ?? detailsPaid ?? 0) || 0;
+
+        const pendingAmount = Number.isFinite(explicitBalance)
+            ? Math.max(0, explicitBalance)
+            : Math.max(0, totalAmount - paidAmount);
+
         const status = String(inv.status || '').trim().toLowerCase();
-        if (status === 'paid') {
-            paid++;
-        } else if (status === 'pending' || status === 'partial' || !status) {
-            const dueDate = new Date(inv.dueDate || inv.due_date || '');
-            if (dueDate < new Date()) {
-                overdue++;
-            } else {
-                pending++;
-            }
+        if (pendingAmount <= 0 || status === 'paid') {
+            paid += totalAmount;
+            paidCount += 1;
         } else {
-            pending++;
+            const dueDate = new Date(inv.dueDate || inv.due_date || '');
+            const isOverdue = !Number.isNaN(dueDate.getTime()) && dueDate < new Date();
+
+            if (isOverdue) {
+                overdue += pendingAmount;
+                overdueCount += 1;
+            } else {
+                pending += pendingAmount;
+                pendingCount += 1;
+            }
         }
     });
     
-    return { paid, pending, overdue };
+    return { paid, pending, overdue, paidCount, pendingCount, overdueCount };
 }
 
 // Get monthly summary from actual payment data
