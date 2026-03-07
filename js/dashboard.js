@@ -511,11 +511,6 @@ function displayCategoryChart(categoryData) {
     );
     const vehicleCounts = clientsChartData.map(c => c.vehicleCount);
     
-    const colors = [
-        '#2563eb', '#059669', '#d97706', '#dc2626', '#7c3aed',
-        '#db2777', '#0891b2', '#7c2d12', '#4c0519', '#1e293b'
-    ];
-    
     if (dashboardCategoryChart) {
         dashboardCategoryChart.destroy();
     }
@@ -527,8 +522,8 @@ function displayCategoryChart(categoryData) {
             datasets: [{
                 label: 'Vehicles',
                 data: vehicleCounts,
-                backgroundColor: colors.slice(0, clientsChartData.length),
-                borderColor: '#fff',
+                backgroundColor: 'rgba(71, 85, 105, 0.7)',
+                borderColor: 'rgba(71, 85, 105, 1)',
                 borderWidth: 1,
                 borderRadius: 6
             }]
@@ -536,6 +531,7 @@ function displayCategoryChart(categoryData) {
         options: {
             responsive: true,
             maintainAspectRatio: false,
+            indexAxis: 'y',
             plugins: {
                 legend: {
                     display: false,
@@ -557,9 +553,18 @@ function displayCategoryChart(categoryData) {
             },
             scales: {
                 y: {
+                    ticks: {
+                        color: '#334155',
+                        font: {
+                            size: 11
+                        }
+                    }
+                },
+                x: {
                     beginAtZero: true,
                     ticks: {
-                        precision: 0
+                        precision: 0,
+                        color: '#475569'
                     }
                 }
             }
