@@ -850,6 +850,7 @@ function filterPaymentTransactions(skipAutoReset = false) {
                 item.invoiceNo.toLowerCase().includes(searchLower) ||
                 item.clientName.toLowerCase().includes(searchLower)
             );
+            const numericTargets = extractSearchNumbers(searchText);
             const matchesAmount = [
                 payment.totalAmount,
                 payment.amount,
