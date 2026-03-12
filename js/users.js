@@ -1,6 +1,37 @@
 // --- Supabase Integration ---
 var supabase = window.supabaseClient;
 
+function escapeHtmlUsers(value) {
+    if (typeof window.escapeHtml === 'function') {
+        return window.escapeHtml(value);
+    }
+
+    return String(value ?? '')
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#39;');
+}
+
+function escapeJsSingleQuote(value) {
+    return String(value ?? '').replace(/\\/g, '\\\\').replace(/'/g, "\\'");
+}
+
+async function hashPasswordSecure(password) {
+    const text = String(password || '');
+
+    if (window.crypto && window.crypto.subtle && window.TextEncoder) {
+        const digest = await window.crypto.subtle.digest('SHA-256', new window.TextEncoder().encode(text));
+        const hash = Array.from(new Uint8Array(digest))
+            .map((byte) => byte.toString(16).padStart(2, '0'))
+            .join('');
+        return `sha256:${hash}`;
+    }
+
+    return `weak:${window.btoa(unescape(encodeURIComponent(text)))}`;
+}
+
 // Fetch all users from Supabase
 async function fetchUsersFromSupabase() {
     const { data, error } = await supabase
@@ -99,7 +130,7 @@ async function loadUsers() {
     displayUsersList();
 }
 
-function createAccountID() {
+async function createAccountID() {
     if (!ensureFeaturePermission('users', 'create')) {
         return;
     }
@@ -120,36 +151,37 @@ function createAccountID() {
         return;
     }
 
-    // Check if username already exists
-    fetchUsersFromSupabase().then(users => {
-        if (users.some(u => u.username === username)) {
-            alert('Username already exists');
-            return;
-        }
+    const users = await fetchUsersFromSupabase();
+    if (users.some((u) => String(u.username || '').toLowerCase() === username.toLowerCase())) {
+        alert('Username already exists');
+        return;
+    }
 
-        const permissions = getDefaultUserPermissions(role);
+    const permissions = getDefaultUserPermissions(role);
+    const passwordHash = await hashPasswordSecure(password);
+    const newAccount = {
+        id: generateAccountID(),
+        username,
+        email,
+        password: passwordHash,
+        password_hash: passwordHash,
+        password_algorithm: 'sha256',
+        fullname,
+        role,
+        permissions,
+        createdAt: new Date().toISOString(),
+        status: 'active'
+    };
 
-        const newAccount = {
-            id: generateAccountID(),
-            username,
-            email,
-            password,
-            fullname,
-            role,
-            permissions,
-            createdAt: new Date().toISOString(),
-            status: 'active'
-        };
+    const savedUser = await saveUserToSupabase(newAccount);
+    if (!savedUser) {
+        alert('Failed to create user. Please try again.');
+        return;
+    }
 
-        saveUserToSupabase(newAccount).then(() => {
-            // Log audit action
-            const idType = role === 'admin' ? 'Admin ID' : 'User ID';
-            logAuditAction('CREATE', idType, newAccount.id, newAccount.username, `Created ${role} user: ${fullname}`);
+    const idType = role === 'admin' ? 'Admin ID' : 'User ID';
+    logAuditAction('CREATE', idType, newAccount.id, newAccount.username, `Created ${role} user: ${fullname}`);
 
-            // Clear form
-            // ...existing code...
-        });
-    });
     document.getElementById('account-username').value = '';
     document.getElementById('account-email').value = '';
     document.getElementById('account-password').value = '';
@@ -273,30 +305,38 @@ function displayUsersList() {
         const createdDate = new Date(user.createdAt).toLocaleDateString();
         const roleClass = user.role === 'admin' ? 'background: #e3f2fd; color: #1976d2;' : 'background: #f3e5f5; color: #7b1fa2;';
         const statusClass = user.status === 'active' ? 'color: var(--success);' : 'color: var(--danger);';
+        const safeUsername = escapeHtmlUsers(user.username);
+        const safeUsernameJs = escapeJsSingleQuote(user.username);
+        const safeFullname = escapeHtmlUsers(user.fullname);
+        const safeEmail = escapeHtmlUsers(user.email);
+        const safeId = escapeHtmlUsers(user.id);
+        const safeRole = escapeHtmlUsers(String(user.role || '').toUpperCase());
+        const safeStatus = escapeHtmlUsers(String(user.status || '').toUpperCase());
+        const safeCreatedDate = escapeHtmlUsers(createdDate);
 
         html += '<tr>';
-        html += `<td><small style="color: var(--gray-600);">${user.id}</small></td>`;
-        html += `<td><strong>${user.username}</strong></td>`;
-        html += `<td>${user.fullname}</td>`;
-        html += `<td>${user.email}</td>`;
-        html += `<td><span style="${roleClass}; padding: 4px 8px; border-radius: 4px; font-weight: 600;">${user.role.toUpperCase()}</span></td>`;
-        html += `<td style="${statusClass}; font-weight: 600;">${user.status.toUpperCase()}</td>`;
-        html += `<td>${createdDate}</td>`;
+        html += `<td><small style="color: var(--gray-600);">${safeId}</small></td>`;
+        html += `<td><strong>${safeUsername}</strong></td>`;
+        html += `<td>${safeFullname}</td>`;
+        html += `<td>${safeEmail}</td>`;
+        html += `<td><span style="${roleClass}; padding: 4px 8px; border-radius: 4px; font-weight: 600;">${safeRole}</span></td>`;
+        html += `<td style="${statusClass}; font-weight: 600;">${safeStatus}</td>`;
+        html += `<td>${safeCreatedDate}</td>`;
         html += `<td style="white-space: nowrap;">
             <div style="display: inline-flex; align-items: center; gap: 6px;">`;
-        html += `<button class="btn btn-sm btn-secondary" onclick="viewUserPermissions('${user.username}')" title="View Permissions" style="width: 30px; height: 30px; padding: 0; display: inline-flex; align-items: center; justify-content: center;">
+        html += `<button class="btn btn-sm btn-secondary" onclick="viewUserPermissions('${safeUsernameJs}')" title="View Permissions" style="width: 30px; height: 30px; padding: 0; display: inline-flex; align-items: center; justify-content: center;">
                     <i class="fas fa-eye"></i>
                 </button>`;
         if (canEditUsers) {
-            html += `<button class="btn btn-sm btn-primary" onclick="editUserPermissions('${user.username}')" title="Edit Permissions" style="width: 30px; height: 30px; padding: 0; display: inline-flex; align-items: center; justify-content: center;">
+            html += `<button class="btn btn-sm btn-primary" onclick="editUserPermissions('${safeUsernameJs}')" title="Edit Permissions" style="width: 30px; height: 30px; padding: 0; display: inline-flex; align-items: center; justify-content: center;">
                         <i class="fas fa-user-shield"></i>
                     </button>`;
-            html += `<button class="btn btn-sm btn-warning" onclick="toggleUserStatus('${user.username}')" title="Toggle Status" style="width: 30px; height: 30px; padding: 0; display: inline-flex; align-items: center; justify-content: center;">
+            html += `<button class="btn btn-sm btn-warning" onclick="toggleUserStatus('${safeUsernameJs}')" title="Toggle Status" style="width: 30px; height: 30px; padding: 0; display: inline-flex; align-items: center; justify-content: center;">
                         <i class="fas fa-power-off"></i>
                     </button>`;
         }
         if (canDeleteUsers) {
-            html += `<button class="btn btn-sm btn-danger" onclick="deleteUserID('${user.username}')" title="Delete User" style="width: 30px; height: 30px; padding: 0; display: inline-flex; align-items: center; justify-content: center;">
+            html += `<button class="btn btn-sm btn-danger" onclick="deleteUserID('${safeUsernameJs}')" title="Delete User" style="width: 30px; height: 30px; padding: 0; display: inline-flex; align-items: center; justify-content: center;">
                         <i class="fas fa-trash"></i>
                     </button>`;
         }
@@ -362,20 +402,20 @@ function viewUserPermissions(username) {
         <div class="modal-overlay" onclick="closeModal()">
             <div class="modal-content" onclick="event.stopPropagation()">
                 <div class="modal-header">
-                    <h3>User Permissions: ${user.fullname}</h3>
+                    <h3>User Permissions: ${escapeHtmlUsers(user.fullname)}</h3>
                     <button class="modal-close" onclick="closeModal()">×</button>
                 </div>
                 <div class="modal-body">
                     <p style="margin-bottom: 16px; color: var(--gray-600);">
-                        <strong>Username:</strong> ${user.username} | 
-                        <strong>Role:</strong> ${user.role.toUpperCase()} |
-                        <strong>Status:</strong> ${user.status.toUpperCase()}
+                        <strong>Username:</strong> ${escapeHtmlUsers(user.username)} | 
+                        <strong>Role:</strong> ${escapeHtmlUsers(String(user.role || '').toUpperCase())} |
+                        <strong>Status:</strong> ${escapeHtmlUsers(String(user.status || '').toUpperCase())}
                     </p>
                     <h4>Permissions:</h4>
                     ${permsList}
                 </div>
                 <div class="modal-footer">
-                    ${Auth.hasFeaturePermission('users', 'edit') ? `<button class="btn btn-secondary" onclick="editUserPermissions('${user.username}')">Edit Permissions</button>` : ''}
+                    ${Auth.hasFeaturePermission('users', 'edit') ? `<button class="btn btn-secondary" onclick="editUserPermissions('${escapeJsSingleQuote(user.username)}')">Edit Permissions</button>` : ''}
                     <button class="btn btn-primary" onclick="closeModal()">Close</button>
                 </div>
             </div>
@@ -755,18 +795,18 @@ function displayAuditLog(containerId = 'audit-log-container') {
             <div style="background: #f9fafb; padding: 12px; border-radius: 6px; border-left: 3px solid ${actionColor}; margin-bottom: 10px;">
                 <div style="display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 6px;">
                     <span style="background: ${actionBg}; color: ${actionColor}; padding: 2px 8px; border-radius: 3px; font-weight: 600; font-size: 11px;">
-                        ${entry.action}
+                        ${escapeHtmlUsers(entry.action)}
                     </span>
-                    <small style="color: var(--gray-500);">${timeStr}</small>
+                    <small style="color: var(--gray-500);">${escapeHtmlUsers(timeStr)}</small>
                 </div>
                 <p style="margin: 4px 0; font-size: 12px; color: var(--gray-700);">
-                    <strong>${entry.type}:</strong> ${entry.targetUsername}
+                    <strong>${escapeHtmlUsers(entry.type)}:</strong> ${escapeHtmlUsers(entry.targetUsername)}
                 </p>
                 <small style="color: var(--gray-600); display: block; margin: 4px 0;">
-                    By: <strong>${entry.performedBy}</strong> (${entry.performedByRole})
+                    By: <strong>${escapeHtmlUsers(entry.performedBy)}</strong> (${escapeHtmlUsers(entry.performedByRole)})
                 </small>
                 <small style="color: var(--gray-500); display: block; margin-top: 4px;">
-                    ${entry.details}
+                    ${escapeHtmlUsers(entry.details)}
                 </small>
             </div>
         `;

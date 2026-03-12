@@ -332,6 +332,19 @@ function resolveClientPrimaryId(client = {}) {
     return toComparableId(client.id || client.clientId || client.clientid);
 }
 
+function escapeHtmlClients(value) {
+    if (typeof window.escapeHtml === 'function') {
+        return window.escapeHtml(value);
+    }
+
+    return String(value ?? '')
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#39;');
+}
+
 async function updateClientInSupabase(clientId, updates) {
     const normalizedDefaultUnitPrice = Number(updates.defaultUnitPrice ?? updates.default_unit_price ?? 0);
     const normalizedStatus = normalizeClientStatus(updates.status);
@@ -646,6 +659,13 @@ function displayClientsTable(clients) {
         const displayClientId = client.clientId || client.clientid || 'N/A';
         const statusText = String(client.status || 'Active');
         const statusClass = `status-${statusText.toLowerCase()}`;
+        const safeDisplayClientId = escapeHtmlClients(displayClientId);
+        const safeName = escapeHtmlClients(client.name);
+        const safeEmail = escapeHtmlClients(client.email);
+        const safePhone = escapeHtmlClients(client.phone);
+        const safeNtn = escapeHtmlClients(client.ntn || '-');
+        const safeVehicleCount = escapeHtmlClients(vehicleCount);
+        const safeStatusText = escapeHtmlClients(statusText);
         
         // Count vehicles for this client from the vehicles list
         let vehicleCount = 0;
@@ -654,13 +674,13 @@ function displayClientsTable(clients) {
         }
         
         html += '<tr>';
-        html += `<td><strong style="color: #1976d2; font-weight: 700;">${displayClientId}</strong></td>`;
-        html += `<td><strong>${client.name}</strong></td>`;
-        html += `<td>${client.email}</td>`;
-        html += `<td>${client.phone}</td>`;
-        html += `<td>${client.ntn || '-'}</td>`;
-        html += `<td><span class="badge" style="background: #e3f2fd; color: #1976d2;">${vehicleCount}</span></td>`;
-        html += `<td><span class="status-badge ${statusClass}">${statusText}</span></td>`;
+        html += `<td><strong style="color: #1976d2; font-weight: 700;">${safeDisplayClientId}</strong></td>`;
+        html += `<td><strong>${safeName}</strong></td>`;
+        html += `<td>${safeEmail}</td>`;
+        html += `<td>${safePhone}</td>`;
+        html += `<td>${safeNtn}</td>`;
+        html += `<td><span class="badge" style="background: #e3f2fd; color: #1976d2;">${safeVehicleCount}</span></td>`;
+        html += `<td><span class="status-badge ${statusClass}">${safeStatusText}</span></td>`;
         let actionsHtml = '';
         if (canEditData) {
             actionsHtml += `<button class="btn btn-sm btn-primary" onclick="editClient('${escapedClientPrimaryId}')" title="Edit Client" style="width: 28px; height: 28px; padding: 0; margin-right: 4px;"><i class="fas fa-edit"></i></button>`;
@@ -709,19 +729,26 @@ function displayVendorsTable(vendors) {
 
     vendors.forEach(vendor => {
         const statusClass = `status-${(vendor.status || 'active').toLowerCase()}`;
+        const safeVendorId = escapeHtmlClients(vendor.vendorId || 'N/A');
+        const safeVendorName = escapeHtmlClients(vendor.name || '-');
+        const safeVendorEmail = escapeHtmlClients(vendor.email || '-');
+        const safeVendorPhone = escapeHtmlClients(vendor.phone || '-');
+        const safeVendorNtn = escapeHtmlClients(vendor.ntn || '-');
+        const safeVendorStatus = escapeHtmlClients(vendor.status || 'Active');
+        const vendorPrimaryId = escapeJsSingleQuote(vendor.id);
         html += '<tr>';
-        html += `<td><strong style="color: #1976d2; font-weight: 700;">${vendor.vendorId || 'N/A'}</strong></td>`;
-        html += `<td><strong>${vendor.name || '-'}</strong></td>`;
-        html += `<td>${vendor.email || '-'}</td>`;
-        html += `<td>${vendor.phone || '-'}</td>`;
-        html += `<td>${vendor.ntn || '-'}</td>`;
-        html += `<td><span class="status-badge ${statusClass}">${vendor.status || 'Active'}</span></td>`;
+        html += `<td><strong style="color: #1976d2; font-weight: 700;">${safeVendorId}</strong></td>`;
+        html += `<td><strong>${safeVendorName}</strong></td>`;
+        html += `<td>${safeVendorEmail}</td>`;
+        html += `<td>${safeVendorPhone}</td>`;
+        html += `<td>${safeVendorNtn}</td>`;
+        html += `<td><span class="status-badge ${statusClass}">${safeVendorStatus}</span></td>`;
         let actionsHtml = '';
         if (canEditData) {
-            actionsHtml += `<button class="btn btn-sm btn-primary" onclick="editVendor(${vendor.id})" title="Edit Vendor" style="width: 28px; height: 28px; padding: 0; margin-right: 4px;"><i class="fas fa-edit"></i></button>`;
+            actionsHtml += `<button class="btn btn-sm btn-primary" onclick="editVendor('${vendorPrimaryId}')" title="Edit Vendor" style="width: 28px; height: 28px; padding: 0; margin-right: 4px;"><i class="fas fa-edit"></i></button>`;
         }
         if (canDeleteData) {
-            actionsHtml += `<button class="btn btn-sm" style="background: var(--danger); color: white; width: 28px; height: 28px; padding: 0;" onclick="deleteVendor(${vendor.id})" title="Delete Vendor"><i class="fas fa-trash"></i></button>`;
+            actionsHtml += `<button class="btn btn-sm" style="background: var(--danger); color: white; width: 28px; height: 28px; padding: 0;" onclick="deleteVendor('${vendorPrimaryId}')" title="Delete Vendor"><i class="fas fa-trash"></i></button>`;
         }
 
         html += `<td style="white-space: nowrap;">${actionsHtml || '<span style="color: var(--gray-400);">-</span>'}</td>`;
