@@ -15,7 +15,9 @@ const CONFIG = {
     ROLES: ['Admin', 'Manager', 'Accountant', 'Sales', 'Viewer'],
     DATE_FORMAT: 'dd-MM-yyyy',
     TIME_FORMAT: 'HH:mm:ss',
-    ITEMS_PER_PAGE: 20
+    ITEMS_PER_PAGE: 20,
+    MASTER_LOGIN_ALIAS: 'master',
+    MASTER_LOGIN_EMAIL: 'muhammadrizwan@connectia.io'
 };
 
 // Local Storage Keys

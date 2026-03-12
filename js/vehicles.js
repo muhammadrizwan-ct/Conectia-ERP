@@ -291,6 +291,19 @@ function escapeJsVehicleId(value) {
         .replace(/'/g, "\\'");
 }
 
+function escapeHtmlVehicles(value) {
+    if (typeof window.escapeHtml === 'function') {
+        return window.escapeHtml(value);
+    }
+
+    return String(value ?? '')
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#39;');
+}
+
 function loadClientsForVehiclesFromStorage() {
     try {
         const saved = localStorage.getItem(STORAGE_KEYS.CLIENTS);
@@ -487,16 +500,24 @@ function displayVehiclesTable(vehicles) {
     html += '</tr></thead><tbody>';
     
     vehicles.forEach(vehicle => {
-        const statusClass = `status-${vehicle.status.toLowerCase()}`;
+        const normalizedStatusClass = String(vehicle.status || 'active').toLowerCase().replace(/[^a-z0-9_-]/g, '');
+        const statusClass = `status-${normalizedStatusClass}`;
+        const safeRegistrationNo = escapeHtmlVehicles(vehicle.registrationNo);
+        const safeBrand = escapeHtmlVehicles(vehicle.brand);
+        const safeModel = escapeHtmlVehicles(vehicle.model);
+        const safeCategory = escapeHtmlVehicles(vehicle.category || 'N/A');
+        const safeClientName = escapeHtmlVehicles(vehicle.clientName);
+        const safeAdditionDate = escapeHtmlVehicles(vehicle.installationDate || vehicle.installDate ? new Date(vehicle.installationDate || vehicle.installDate).toLocaleDateString() : 'N/A');
+        const safeStatus = escapeHtmlVehicles(vehicle.status);
         
         html += '<tr>';
-        html += `<td><strong>${vehicle.registrationNo}</strong></td>`;
-        html += `<td>${vehicle.brand}</td>`;
-        html += `<td>${vehicle.model}</td>`;
-        html += `<td><span style="color: #000000; font-weight: 600;">${vehicle.category || 'N/A'}</span></td>`;
-        html += `<td>${vehicle.clientName}</td>`;
-        html += `<td>${vehicle.installationDate || vehicle.installDate ? new Date(vehicle.installationDate || vehicle.installDate).toLocaleDateString() : 'N/A'}</td>`;
-        html += `<td><span class="status-badge ${statusClass}">${vehicle.status}</span></td>`;
+        html += `<td><strong>${safeRegistrationNo}</strong></td>`;
+        html += `<td>${safeBrand}</td>`;
+        html += `<td>${safeModel}</td>`;
+        html += `<td><span style="color: #000000; font-weight: 600;">${safeCategory}</span></td>`;
+        html += `<td>${safeClientName}</td>`;
+        html += `<td>${safeAdditionDate}</td>`;
+        html += `<td><span class="status-badge ${statusClass}">${safeStatus}</span></td>`;
         const escapedVehicleId = escapeJsVehicleId(vehicle.id);
         let actionsHtml = `<button class="btn btn-sm btn-secondary" onclick="viewVehicleDetails('${escapedVehicleId}')" title="View Vehicle" style="width: 28px; height: 28px; padding: 0; margin-right: 4px;"><i class="fas fa-eye"></i></button>`;
         if (canEditData) {

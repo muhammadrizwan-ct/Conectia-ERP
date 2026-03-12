@@ -3091,6 +3091,23 @@ function resetVendorPaymentFilters(triggerFilter = true) {
 }
 
 function displayVendorPaymentsTable(payments) {
+    const escapeHtmlPayments = (value) => {
+        if (typeof window.escapeHtml === 'function') {
+            return window.escapeHtml(value);
+        }
+
+        return String(value ?? '')
+            .replace(/&/g, '&amp;')
+            .replace(/</g, '&lt;')
+            .replace(/>/g, '&gt;')
+            .replace(/"/g, '&quot;')
+            .replace(/'/g, '&#39;');
+    };
+
+    const escapeJsSingleQuotePayment = (value) => String(value ?? '')
+        .replace(/\\/g, '\\\\')
+        .replace(/'/g, "\\'");
+
     const container = document.getElementById('vendor-payments-table-container');
     const canEditData = Auth.hasDataActionPermission('edit');
     const canDeleteData = Auth.hasDataActionPermission('delete');
@@ -3122,17 +3139,25 @@ function displayVendorPaymentsTable(payments) {
 
     payments.forEach(payment => {
         const amount = Number(payment.amount || 0);
-        const rowId = String(payment.id || '').replace(/\\/g, '\\\\').replace(/'/g, "\\'");
+        const rowId = escapeJsSingleQuotePayment(payment.id);
         totalAmount += amount;
+        const safePaymentDate = escapeHtmlPayments(payment.paymentDate || '-');
+        const safeVendorName = escapeHtmlPayments(payment.vendorName || '-');
+        const safeInvoiceNo = escapeHtmlPayments(payment.invoiceNo || '-');
+        const safeInvoiceMonth = escapeHtmlPayments(payment.invoiceMonth || '-');
+        const safeMethod = escapeHtmlPayments(payment.method || '-');
+        const safeReference = escapeHtmlPayments(payment.reference || '-');
+        const safeAmount = escapeHtmlPayments(formatPKR(amount));
+        const safeNotes = escapeHtmlPayments(payment.notes || '-');
         html += '<tr>';
-        html += `<td style="padding: 12px;">${payment.paymentDate || '-'}</td>`;
-        html += `<td style="padding: 12px;">${payment.vendorName || '-'}</td>`;
-        html += `<td style="padding: 12px;">${payment.invoiceNo || '-'}</td>`;
-        html += `<td style="padding: 12px;">${payment.invoiceMonth || '-'}</td>`;
-        html += `<td style="padding: 12px;">${payment.method || '-'}</td>`;
-        html += `<td style="padding: 12px;">${payment.reference || '-'}</td>`;
-        html += `<td style="padding: 12px; text-align: right;">${formatPKR(amount)}</td>`;
-        html += `<td style="padding: 12px;">${payment.notes || '-'}</td>`;
+        html += `<td style="padding: 12px;">${safePaymentDate}</td>`;
+        html += `<td style="padding: 12px;">${safeVendorName}</td>`;
+        html += `<td style="padding: 12px;">${safeInvoiceNo}</td>`;
+        html += `<td style="padding: 12px;">${safeInvoiceMonth}</td>`;
+        html += `<td style="padding: 12px;">${safeMethod}</td>`;
+        html += `<td style="padding: 12px;">${safeReference}</td>`;
+        html += `<td style="padding: 12px; text-align: right;">${safeAmount}</td>`;
+        html += `<td style="padding: 12px;">${safeNotes}</td>`;
         let actionButtons = '';
         if (canEditData) {
             actionButtons += `<button class="btn btn-sm btn-primary" onclick="showEditVendorPaymentModal('${rowId}')" title="Edit Payment" style="width: 28px; height: 28px; padding: 0; margin-right: 4px;"><i class="fas fa-edit"></i></button>`;

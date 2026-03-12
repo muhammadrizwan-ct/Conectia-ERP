@@ -6,96 +6,86 @@ class AuthService {
     }
 
     async init() {
-        const token = localStorage.getItem(STORAGE_KEYS.AUTH_TOKEN);
-        const savedUser = localStorage.getItem(STORAGE_KEYS.USER);
-        
-        if (token && savedUser) {
-            try {
-                this.user = JSON.parse(savedUser);
-                this.applyUserPermissions();
-                
-                // Verify token with backend (with timeout)
-                try {
-                    const timeoutPromise = new Promise((_, reject) =>
-                        setTimeout(() => reject(new Error('API timeout')), 3000)
-                    );
-                    const response = await Promise.race([API.getCurrentUser(), timeoutPromise]);
-                    if (response.user) {
-                        this.user = response.user;
-                        this.applyUserPermissions();
-                        this.saveUser();
-                    }
-                } catch (apiError) {
-                    // Backend not available, continue with saved user
-                    console.warn('API verification failed:', apiError.message);
-                }
-            } catch (error) {
-                this.logout();
+        try {
+            const supabase = window.supabaseClient;
+            if (!supabase?.auth) {
+                this.clearAuth();
+                return;
             }
+
+            const { data, error } = await supabase.auth.getSession();
+            if (error || !data?.session?.access_token) {
+                this.clearAuth();
+                return;
+            }
+
+            API.setToken(data.session.access_token);
+            this.user = await this.resolveSessionUser(data.session);
+            this.applyUserPermissions();
+            this.saveUser();
+        } catch (error) {
+            console.error('Auth init failed:', error);
+            this.clearAuth();
         }
     }
 
     async login(username, password) {
         try {
-            try {
-                // Try API login with timeout
-                const timeoutPromise = new Promise((_, reject) =>
-                    setTimeout(() => reject(new Error('API timeout')), 3000)
-                );
-                const response = await Promise.race([API.login(username, password), timeoutPromise]);
-                this.user = response.user;
-                this.applyUserPermissions();
-                this.saveUser();
-                return { success: true, user: this.user };
-            } catch (apiError) {
-                // Backend not available - allow demo login
-                console.warn('API login failed, using demo mode:', apiError.message);
+            const loginId = String(username || '').trim();
+            const pwd = String(password || '');
+            const masterAlias = String(CONFIG?.MASTER_LOGIN_ALIAS || 'master').trim().toLowerCase();
+            const masterEmail = String(CONFIG?.MASTER_LOGIN_EMAIL || '').trim().toLowerCase();
 
-                const storedAccount = this.getStoredUserByCredentials(username, password);
-                if (storedAccount) {
-                    const status = String(storedAccount.status || 'active').toLowerCase();
-                    if (status !== 'active') {
-                        throw new Error('Your account is inactive. Please contact admin.');
-                    }
-
-                    this.user = this.buildSessionUserFromStoredAccount(storedAccount);
-                    localStorage.setItem(STORAGE_KEYS.AUTH_TOKEN, 'local-token-' + Date.now());
-                    this.applyUserPermissions();
-                    this.saveUser();
-                    return { success: true, user: this.user };
-                }
-
-                if (username.toLowerCase() === 'demo' && password === 'demo') {
-                    this.user = {
-                        id: 1,
-                        username: 'demo',
-                        email: 'demo@example.com',
-                        role: 'Admin',
-                        name: 'Demo User',
-                        permissions: {
-                            canGenerateInvoices: true,
-                            canDownloadInvoicePDF: true,
-                            canDeleteInvoices: true,
-                            canEditClients: true,
-                            canDeleteClients: true,
-                            canEditData: true,
-                            canDeleteData: true
-                        }
-                    };
-                    localStorage.setItem(STORAGE_KEYS.AUTH_TOKEN, 'demo-token-' + Date.now());
-                    this.applyUserPermissions();
-                    this.saveUser();
-                    return { success: true, user: this.user };
-                }
-                throw new Error('Invalid credentials');
+            if (!loginId || !pwd) {
+                return { success: false, message: 'Please enter email/username and password.' };
             }
+
+            let emailForLogin = loginId.toLowerCase();
+            if (!emailForLogin.includes('@')) {
+                if (emailForLogin === masterAlias && masterEmail.includes('@')) {
+                    emailForLogin = masterEmail;
+                } else {
+                    return { success: false, message: 'Use your email address to sign in.' };
+                }
+            }
+
+            const supabase = window.supabaseClient;
+            if (!supabase?.auth) {
+                return { success: false, message: 'Authentication service unavailable. Please try again.' };
+            }
+
+            const { data, error } = await supabase.auth.signInWithPassword({
+                email: emailForLogin,
+                password: pwd
+            });
+
+            if (error || !data?.session?.access_token) {
+                return { success: false, message: error?.message || 'Invalid credentials' };
+            }
+
+            API.setToken(data.session.access_token);
+            this.user = await this.resolveSessionUser(data.session);
+
+            const status = String(this.user?.status || 'active').toLowerCase();
+            if (status !== 'active') {
+                await supabase.auth.signOut();
+                this.clearAuth();
+                return { success: false, message: 'Your account is inactive. Please contact admin.' };
+            }
+
+            this.applyUserPermissions();
+            this.saveUser();
+            return { success: true, user: this.user };
         } catch (error) {
-            return { success: false, message: error.message };
+            return { success: false, message: 'Authentication service unavailable. Please try again.' };
         }
     }
 
     async logout() {
         try {
+            if (window.supabaseClient?.auth) {
+                await window.supabaseClient.auth.signOut();
+            }
             await API.logout();
         } catch (error) {
             console.error('Logout error:', error);
@@ -114,8 +104,82 @@ class AuthService {
     clearAuth() {
         this.user = null;
         this.permissions = null;
-        localStorage.removeItem(STORAGE_KEYS.AUTH_TOKEN);
+        API.clearToken();
         localStorage.removeItem(STORAGE_KEYS.USER);
+    }
+
+    async resolveSessionUser(session) {
+        const baseUser = {
+            id: session?.user?.id,
+            username: session?.user?.email || 'user',
+            email: session?.user?.email || '',
+            role: 'viewer',
+            fullname: session?.user?.user_metadata?.full_name || session?.user?.email || 'User',
+            name: session?.user?.user_metadata?.full_name || session?.user?.email || 'User',
+            status: 'active',
+            permissions: {}
+        };
+
+        try {
+            const supabase = window.supabaseClient;
+            const email = String(session?.user?.email || '').trim().toLowerCase();
+            const authUserId = session?.user?.id || null;
+
+            if (!supabase || (!email && !authUserId)) {
+                return baseUser;
+            }
+
+            let query = supabase
+                .from('users')
+                .select('id, username, email, role, fullname, status, permissions, auth_user_id')
+                .limit(1);
+
+            if (authUserId) {
+                query = query.eq('auth_user_id', authUserId);
+            } else {
+                query = query.ilike('email', email);
+            }
+
+            let { data: profile, error } = await query.maybeSingle();
+
+            if ((!profile || error) && email) {
+                const fallback = await supabase
+                    .from('users')
+                    .select('id, username, email, role, fullname, status, permissions, auth_user_id')
+                    .ilike('email', email)
+                    .limit(1)
+                    .maybeSingle();
+                profile = fallback.data || profile;
+                error = fallback.error || error;
+            }
+
+            if (error || !profile) {
+                return baseUser;
+            }
+
+            if (!profile.auth_user_id && authUserId) {
+                await supabase
+                    .from('users')
+                    .update({ auth_user_id: authUserId })
+                    .eq('id', profile.id);
+            }
+
+            return {
+                id: profile.id || baseUser.id,
+                username: profile.username || profile.email || baseUser.username,
+                email: profile.email || baseUser.email,
+                role: profile.role || baseUser.role,
+                fullname: profile.fullname || profile.username || baseUser.fullname,
+                name: profile.fullname || profile.username || baseUser.name,
+                status: profile.status || baseUser.status,
+                permissions: profile.permissions && typeof profile.permissions === 'object'
+                    ? profile.permissions
+                    : {}
+            };
+        } catch (error) {
+            console.error('Failed to resolve user profile:', error);
+            return baseUser;
+        }
     }
 
     getStoredUserAccount(username) {
@@ -166,19 +230,6 @@ class AuthService {
 
     applyUserPermissions() {
         if (!this.user) return;
-
-        const storedAccount = this.getStoredUserAccount(this.user.username);
-        if (storedAccount) {
-            this.user = {
-                ...this.user,
-                role: storedAccount.role || this.user.role,
-                permissions: {
-                    ...(this.user.permissions || {}),
-                    ...(storedAccount.permissions || {})
-                }
-            };
-        }
-
         this.setPermissions(this.user.role, this.user.permissions);
     }
 
@@ -369,7 +420,7 @@ class AuthService {
     }
 
     isLoggedIn() {
-        return !!this.user && !!localStorage.getItem(STORAGE_KEYS.AUTH_TOKEN);
+        return !!this.user && !!API.token;
     }
 
     hasPermission(permission) {
@@ -447,7 +498,18 @@ class AuthService {
 
     async changePassword(currentPassword, newPassword) {
         try {
-            await API.changePassword(currentPassword, newPassword);
+            if (!window.supabaseClient?.auth) {
+                throw new Error('Authentication service unavailable');
+            }
+
+            const { error } = await window.supabaseClient.auth.updateUser({
+                password: String(newPassword || '')
+            });
+
+            if (error) {
+                throw error;
+            }
+
             return { success: true };
         } catch (error) {
             return { success: false, message: error.message };
@@ -498,7 +560,7 @@ async function login() {
     const errorEl = document.getElementById('login-error');
 
     if (!username || !password) {
-        errorEl.textContent = 'Please enter username and password';
+        errorEl.textContent = 'Please enter email and password';
         errorEl.classList.remove('hidden');
         return;
     }
@@ -537,10 +599,10 @@ function updateUserInfo() {
         const displayName = user.name || user.fullname || user.username || 'User';
         const displayRole = user.role || 'User';
         userInfoEl.innerHTML = `
-            <div class="user-avatar">${displayName.charAt(0)}</div>
+            <div class="user-avatar">${escapeHtml(displayName.charAt(0))}</div>
             <div class="user-details">
-                <h4>${displayName}</h4>
-                <p>${displayRole}</p>
+                <h4>${escapeHtml(displayName)}</h4>
+                <p>${escapeHtml(displayRole)}</p>
             </div>
         `;
     }
@@ -748,7 +810,7 @@ async function loadPage(page, options = {}) {
         'ledger-bank': 'Bank Ledger'
     };
     const pageTitle = pageTitleMap[normalizedPage] || capitalizeFirst(normalizedPage);
-    document.getElementById('page-title').innerHTML = `<h2>${pageTitle}</h2>`;
+    document.getElementById('page-title').innerHTML = `<h2>${escapeHtml(pageTitle)}</h2>`;
 
     const resolveLoader = (name) => {
         const fromWindow = window[name];
@@ -868,7 +930,7 @@ function showNotification(message, type = 'info') {
     notification.className = `notification notification-${type}`;
     notification.innerHTML = `
         <i class="fas fa-${type === 'success' ? 'check-circle' : type === 'error' ? 'exclamation-circle' : 'info-circle'}"></i>
-        <span>${message}</span>
+        <span>${escapeHtml(message)}</span>
     `;
     
     document.body.appendChild(notification);
@@ -890,7 +952,7 @@ async function showConfirm(message) {
                     <span class="close-btn" onclick="this.closest('.modal').remove()">&times;</span>
                 </div>
                 <div class="modal-body">
-                    <p>${message}</p>
+                    <p>${escapeHtml(message)}</p>
                 </div>
                 <div class="modal-footer">
                     <button class="btn btn-secondary" onclick="this.closest('.modal').remove()">Cancel</button>
@@ -937,7 +999,7 @@ function showModal(title, content, onSave = null) {
     modal.innerHTML = `
         <div class="modal-content">
             <div class="modal-header">
-                <h3>${title}</h3>
+                <h3>${escapeHtml(title)}</h3>
                 <span class="close-btn" onclick="this.closest('.modal').remove()">&times;</span>
             </div>
             <div class="modal-body">
@@ -985,6 +1047,17 @@ function formatDateTime(date) {
         minute: '2-digit'
     });
 }
+
+function escapeHtml(value) {
+    return String(value ?? '')
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#39;');
+}
+
+window.escapeHtml = escapeHtml;
 
 // Toggle sidebar
 function toggleSidebar() {
