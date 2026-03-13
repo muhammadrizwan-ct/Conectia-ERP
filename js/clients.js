@@ -659,6 +659,12 @@ function displayClientsTable(clients) {
         const displayClientId = client.clientId || client.clientid || 'N/A';
         const statusText = String(client.status || 'Active');
         const statusClass = `status-${statusText.toLowerCase()}`;
+
+        let vehicleCount = 0;
+        if (window.allVehicles && Array.isArray(window.allVehicles)) {
+            vehicleCount = window.allVehicles.filter(v => v.clientName === client.name).length;
+        }
+
         const safeDisplayClientId = escapeHtmlClients(displayClientId);
         const safeName = escapeHtmlClients(client.name);
         const safeEmail = escapeHtmlClients(client.email);
@@ -666,12 +672,6 @@ function displayClientsTable(clients) {
         const safeNtn = escapeHtmlClients(client.ntn || '-');
         const safeVehicleCount = escapeHtmlClients(vehicleCount);
         const safeStatusText = escapeHtmlClients(statusText);
-        
-        // Count vehicles for this client from the vehicles list
-        let vehicleCount = 0;
-        if (window.allVehicles && Array.isArray(window.allVehicles)) {
-            vehicleCount = window.allVehicles.filter(v => v.clientName === client.name).length;
-        }
         
         html += '<tr>';
         html += `<td><strong style="color: #1976d2; font-weight: 700;">${safeDisplayClientId}</strong></td>`;
