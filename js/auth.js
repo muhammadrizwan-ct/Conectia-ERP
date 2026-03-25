@@ -515,6 +515,56 @@ class AuthService {
             return { success: false, message: error.message };
         }
     }
+
+    async sendPasswordResetEmail(email) {
+        try {
+            const emailStr = String(email || '').trim().toLowerCase();
+            if (!emailStr.includes('@')) {
+                return { success: false, message: 'Please enter a valid email address.' };
+            }
+
+            if (!window.supabaseClient?.auth) {
+                return { success: false, message: 'Authentication service unavailable.' };
+            }
+
+            const { error } = await window.supabaseClient.auth.resetPasswordForEmail(emailStr, {
+                redirectTo: `${window.location.origin}${window.location.pathname}?type=recovery`
+            });
+
+            if (error) {
+                return { success: false, message: error.message };
+            }
+
+            return { success: true, message: 'Password reset email sent successfully. Check your inbox.' };
+        } catch (error) {
+            return { success: false, message: 'Failed to send reset email. Please try again.' };
+        }
+    }
+
+    async resetPassword(newPassword) {
+        try {
+            if (!window.supabaseClient?.auth) {
+                return { success: false, message: 'Authentication service unavailable.' };
+            }
+
+            const passwordStr = String(newPassword || '');
+            if (!passwordStr || passwordStr.length < 6) {
+                return { success: false, message: 'Password must be at least 6 characters long.' };
+            }
+
+            const { error } = await window.supabaseClient.auth.updateUser({
+                password: passwordStr
+            });
+
+            if (error) {
+                return { success: false, message: error.message };
+            }
+
+            return { success: true, message: 'Password reset successfully.' };
+        } catch (error) {
+            return { success: false, message: 'Failed to reset password. Please try again.' };
+        }
+    }
 }
 
 function ensureDataActionPermission(actionType = 'edit') {
@@ -1064,4 +1114,99 @@ function toggleSidebar() {
     const sidebar = document.getElementById('sidebar');
     sidebar.classList.toggle('collapsed');
     localStorage.setItem(STORAGE_KEYS.SIDEBAR_STATE, sidebar.classList.contains('collapsed'));
+}
+
+// Forgot Password Functions
+function showForgotPasswordPage(event) {
+    event.preventDefault();
+    document.getElementById('login-page').classList.add('hidden');
+    document.getElementById('forgot-password-page').classList.remove('hidden');
+    document.getElementById('reset-email').focus();
+}
+
+function backToLogin(event) {
+    event.preventDefault();
+    document.getElementById('forgot-password-page').classList.add('hidden');
+    document.getElementById('reset-password-page').classList.add('hidden');
+    document.getElementById('login-page').classList.remove('hidden');
+    document.getElementById('login-error').classList.add('hidden');
+    document.getElementById('login-error').textContent = '';
+    document.getElementById('forgot-error').classList.add('hidden');
+    document.getElementById('forgot-error').textContent = '';
+    document.getElementById('forgot-success').classList.add('hidden');
+    document.getElementById('forgot-success').textContent = '';
+    document.getElementById('reset-error').classList.add('hidden');
+    document.getElementById('reset-error').textContent = '';
+    document.getElementById('username').value = '';
+    document.getElementById('password').value = '';
+    document.getElementById('reset-email').value = '';
+    document.getElementById('new-password').value = '';
+    document.getElementById('confirm-password').value = '';
+}
+
+async function sendPasswordResetEmail() {
+    const email = document.getElementById('reset-email').value;
+    const errorEl = document.getElementById('forgot-error');
+    const successEl = document.getElementById('forgot-success');
+    
+    errorEl.classList.add('hidden');
+    successEl.classList.add('hidden');
+    
+    if (!email) {
+        errorEl.textContent = 'Please enter your email address';
+        errorEl.classList.remove('hidden');
+        return;
+    }
+    
+    const result = await Auth.sendPasswordResetEmail(email);
+    
+    if (result.success) {
+        successEl.textContent = result.message;
+        successEl.classList.remove('hidden');
+        document.getElementById('reset-email').value = '';
+        setTimeout(() => {
+            successEl.classList.add('hidden');
+        }, 4000);
+    } else {
+        errorEl.textContent = result.message;
+        errorEl.classList.remove('hidden');
+    }
+}
+
+async function confirmPasswordReset() {
+    const newPassword = document.getElementById('new-password').value;
+    const confirmPassword = document.getElementById('confirm-password').value;
+    const errorEl = document.getElementById('reset-error');
+    
+    errorEl.classList.add('hidden');
+    
+    if (!newPassword || !confirmPassword) {
+        errorEl.textContent = 'Please enter and confirm your new password';
+        errorEl.classList.remove('hidden');
+        return;
+    }
+    
+    if (newPassword !== confirmPassword) {
+        errorEl.textContent = 'Passwords do not match';
+        errorEl.classList.remove('hidden');
+        return;
+    }
+    
+    if (newPassword.length < 6) {
+        errorEl.textContent = 'Password must be at least 6 characters long';
+        errorEl.classList.remove('hidden');
+        return;
+    }
+    
+    const result = await Auth.resetPassword(newPassword);
+    
+    if (result.success) {
+        showNotification('Password reset successfully! Redirecting to login...', 'success');
+        setTimeout(() => {
+            backToLogin(new Event('click'));
+        }, 2000);
+    } else {
+        errorEl.textContent = result.message;
+        errorEl.classList.remove('hidden');
+    }
 }

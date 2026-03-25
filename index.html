@@ -55,7 +55,100 @@
                             Sign In
                         </button>
                         
+                        <div style="text-align: center; margin-top: 16px;">
+                            <a href="#" onclick="showForgotPasswordPage(event)" style="color: var(--primary); text-decoration: none; font-size: 14px; font-weight: 500;">
+                                Forgot Password?
+                            </a>
+                        </div>
 
+                        <p style="text-align: center; font-size: 10px; color: var(--gray-500); margin-top: 14px;">Build by Rizwan</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Forgot Password Page -->
+        <div id="forgot-password-page" class="page hidden">
+            <div class="login-container">
+                <div class="login-card">
+                    <div class="login-header">
+                        <div class="logo-icon" style="font-size: 48px; color: #1976d2;">
+                            <i class="fas fa-key"></i>
+                        </div>
+                        <h1 style="color: #0a5299;">Reset Password</h1>
+                        <p class="subtitle">Enter your email to receive password reset instructions</p>
+                    </div>
+                    
+                    <div id="forgot-form" class="login-form">
+                        <div class="form-group">
+                            <label for="reset-email">
+                                <i class="fas fa-envelope"></i>
+                                Email Address
+                            </label>
+                            <input type="email" id="reset-email" placeholder="Enter your email" autocomplete="off">
+                        </div>
+                        
+                        <div id="forgot-error" class="error-message hidden"></div>
+                        <div id="forgot-success" class="success-message hidden" style="color: var(--success); padding: 12px; background: rgba(5,150,105,0.1); border-radius: var(--radius); margin-bottom: 16px;"></div>
+                        
+                        <button onclick="sendPasswordResetEmail()" class="btn btn-primary btn-block">
+                            <i class="fas fa-envelope"></i>
+                            Send Reset Link
+                        </button>
+                        
+                        <div style="text-align: center; margin-top: 16px;">
+                            <a href="#" onclick="backToLogin(event)" style="color: var(--primary); text-decoration: none; font-size: 14px; font-weight: 500;">
+                                Back to Login
+                            </a>
+                        </div>
+
+                        <p style="text-align: center; font-size: 10px; color: var(--gray-500); margin-top: 14px;">Build by Rizwan</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Reset Password Confirmation Page -->
+        <div id="reset-password-page" class="page hidden">
+            <div class="login-container">
+                <div class="login-card">
+                    <div class="login-header">
+                        <div class="logo-icon" style="font-size: 48px; color: #1976d2;">
+                            <i class="fas fa-lock"></i>
+                        </div>
+                        <h1 style="color: #0a5299;">Create New Password</h1>
+                        <p class="subtitle">Enter your new password below</p>
+                    </div>
+                    
+                    <div id="reset-confirm-form" class="login-form">
+                        <div class="form-group">
+                            <label for="new-password">
+                                <i class="fas fa-lock"></i>
+                                New Password
+                            </label>
+                            <input type="password" id="new-password" placeholder="Enter new password">
+                        </div>
+                        
+                        <div class="form-group">
+                            <label for="confirm-password">
+                                <i class="fas fa-lock"></i>
+                                Confirm Password
+                            </label>
+                            <input type="password" id="confirm-password" placeholder="Confirm new password">
+                        </div>
+                        
+                        <div id="reset-error" class="error-message hidden"></div>
+                        
+                        <button onclick="confirmPasswordReset()" class="btn btn-primary btn-block">
+                            <i class="fas fa-check"></i>
+                            Reset Password
+                        </button>
+                        
+                        <div style="text-align: center; margin-top: 16px;">
+                            <a href="#" onclick="backToLogin(event)" style="color: var(--primary); text-decoration: none; font-size: 14px; font-weight: 500;">
+                                Back to Login
+                            </a>
+                        </div>
 
                         <p style="text-align: center; font-size: 10px; color: var(--gray-500); margin-top: 14px;">Build by Rizwan</p>
                     </div>
