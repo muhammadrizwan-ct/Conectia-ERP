@@ -1059,6 +1059,152 @@ function escapeHtml(value) {
 
 window.escapeHtml = escapeHtml;
 
+// Password Reset Modal Functions
+function showForgotPasswordModal() {
+    const modal = document.getElementById('forgot-password-modal');
+    modal.classList.remove('hidden');
+    document.getElementById('reset-email').focus();
+    document.getElementById('forgot-password-error').classList.add('hidden');
+    document.getElementById('forgot-password-success').classList.add('hidden');
+}
+
+function closeForgotPasswordModal() {
+    const modal = document.getElementById('forgot-password-modal');
+    modal.classList.add('hidden');
+    document.getElementById('reset-email').value = '';
+    document.getElementById('forgot-password-error').classList.add('hidden');
+    document.getElementById('forgot-password-success').classList.add('hidden');
+}
+
+function showResetPasswordModal() {
+    const modal = document.getElementById('reset-password-modal');
+    modal.classList.remove('hidden');
+    document.getElementById('reset-token').focus();
+    document.getElementById('reset-password-error').classList.add('hidden');
+    document.getElementById('reset-password-success').classList.add('hidden');
+}
+
+function closeResetPasswordModal() {
+    const modal = document.getElementById('reset-password-modal');
+    modal.classList.add('hidden');
+    document.getElementById('reset-token').value = '';
+    document.getElementById('new-password').value = '';
+    document.getElementById('confirm-password').value = '';
+    document.getElementById('reset-password-error').classList.add('hidden');
+    document.getElementById('reset-password-success').classList.add('hidden');
+}
+
+async function requestPasswordReset() {
+    const email = document.getElementById('reset-email').value.trim();
+    const errorDiv = document.getElementById('forgot-password-error');
+    const successDiv = document.getElementById('forgot-password-success');
+    
+    errorDiv.classList.add('hidden');
+    successDiv.classList.add('hidden');
+    
+    if (!email) {
+        errorDiv.textContent = 'Please enter your email address.';
+        errorDiv.classList.remove('hidden');
+        return;
+    }
+    
+    if (!email.includes('@')) {
+        errorDiv.textContent = 'Please enter a valid email address.';
+        errorDiv.classList.remove('hidden');
+        return;
+    }
+    
+    try {
+        const supabase = window.supabaseClient;
+        if (!supabase?.auth) {
+            throw new Error('Authentication service unavailable');
+        }
+        
+        const { error } = await supabase.auth.resetPasswordForEmail(email);
+        
+        if (error) {
+            errorDiv.textContent = error.message || 'Failed to send password reset email.';
+            errorDiv.classList.remove('hidden');
+            return;
+        }
+        
+        successDiv.textContent = 'Password reset email sent! Check your inbox for instructions.';
+        successDiv.classList.remove('hidden');
+        
+        setTimeout(() => {
+            closeForgotPasswordModal();
+        }, 3000);
+    } catch (error) {
+        console.error('Password reset error:', error);
+        errorDiv.textContent = error.message || 'An error occurred. Please try again.';
+        errorDiv.classList.remove('hidden');
+    }
+}
+
+async function submitPasswordReset() {
+    const token = document.getElementById('reset-token').value.trim();
+    const newPassword = document.getElementById('new-password').value;
+    const confirmPassword = document.getElementById('confirm-password').value;
+    const errorDiv = document.getElementById('reset-password-error');
+    const successDiv = document.getElementById('reset-password-success');
+    
+    errorDiv.classList.add('hidden');
+    successDiv.classList.add('hidden');
+    
+    if (!token) {
+        errorDiv.textContent = 'Please enter the reset token from your email.';
+        errorDiv.classList.remove('hidden');
+        return;
+    }
+    
+    if (!newPassword) {
+        errorDiv.textContent = 'Please enter a new password.';
+        errorDiv.classList.remove('hidden');
+        return;
+    }
+    
+    if (newPassword.length < 6) {
+        errorDiv.textContent = 'Password must be at least 6 characters long.';
+        errorDiv.classList.remove('hidden');
+        return;
+    }
+    
+    if (newPassword !== confirmPassword) {
+        errorDiv.textContent = 'Passwords do not match.';
+        errorDiv.classList.remove('hidden');
+        return;
+    }
+    
+    try {
+        const supabase = window.supabaseClient;
+        if (!supabase?.auth) {
+            throw new Error('Authentication service unavailable');
+        }
+        
+        const { error } = await supabase.auth.updateUser({
+            password: newPassword
+        });
+        
+        if (error) {
+            errorDiv.textContent = error.message || 'Failed to update password.';
+            errorDiv.classList.remove('hidden');
+            return;
+        }
+        
+        successDiv.textContent = 'Password updated successfully! Redirecting to login...';
+        successDiv.classList.remove('hidden');
+        
+        setTimeout(() => {
+            closeResetPasswordModal();
+            window.location.href = 'index.html';
+        }, 2000);
+    } catch (error) {
+        console.error('Password update error:', error);
+        errorDiv.textContent = error.message || 'An error occurred. Please try again.';
+        errorDiv.classList.remove('hidden');
+    }
+}
+
 // Toggle sidebar
 function toggleSidebar() {
     const sidebar = document.getElementById('sidebar');

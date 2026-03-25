@@ -55,7 +55,11 @@
                             Sign In
                         </button>
                         
-
+                        <div style="text-align: center; margin-top: 16px;">
+                            <button onclick="showForgotPasswordModal()" class="btn-forgot-password">
+                                Forgot Password?
+                            </button>
+                        </div>
 
                         <p style="text-align: center; font-size: 10px; color: var(--gray-500); margin-top: 14px;">Build by Rizwan</p>
                     </div>
@@ -112,7 +116,78 @@
     </div>
 
     <!-- Modals Container -->
-    <div id="modals-container"></div>
+    <div id="modals-container">
+        <!-- Forgot Password Modal -->
+        <div id="forgot-password-modal" class="modal hidden" onclick="if(event.target === this) closeForgotPasswordModal();">
+            <div class="modal-overlay"></div>
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h3>Reset Password</h3>
+                    <button class="modal-close" onclick="closeForgotPasswordModal()">
+                        <i class="fas fa-times"></i>
+                    </button>
+                </div>
+                <div class="modal-body">
+                    <p class="modal-subtitle">Enter your email address to receive password reset instructions</p>
+                    <div class="form-group">
+                        <label for="reset-email">
+                            <i class="fas fa-envelope"></i>
+                            Email Address
+                        </label>
+                        <input type="email" id="reset-email" placeholder="Enter your email" autocomplete="off">
+                    </div>
+                    <div id="forgot-password-error" class="error-message hidden"></div>
+                    <div id="forgot-password-success" class="success-message hidden"></div>
+                </div>
+                <div class="modal-footer">
+                    <button onclick="closeForgotPasswordModal()" class="btn btn-secondary">Cancel</button>
+                    <button onclick="requestPasswordReset()" class="btn btn-primary">Send Reset Link</button>
+                </div>
+            </div>
+        </div>
+
+        <!-- Reset Password Confirmation Modal -->
+        <div id="reset-password-modal" class="modal hidden" onclick="if(event.target === this) closeResetPasswordModal();">
+            <div class="modal-overlay"></div>
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h3>Create New Password</h3>
+                    <button class="modal-close" onclick="closeResetPasswordModal()">
+                        <i class="fas fa-times"></i>
+                    </button>
+                </div>
+                <div class="modal-body">
+                    <div class="form-group">
+                        <label for="reset-token">
+                            <i class="fas fa-key"></i>
+                            Reset Token
+                        </label>
+                        <input type="text" id="reset-token" placeholder="Enter the token from your email" autocomplete="off">
+                    </div>
+                    <div class="form-group">
+                        <label for="new-password">
+                            <i class="fas fa-lock"></i>
+                            New Password
+                        </label>
+                        <input type="password" id="new-password" placeholder="Enter new password">
+                    </div>
+                    <div class="form-group">
+                        <label for="confirm-password">
+                            <i class="fas fa-lock"></i>
+                            Confirm Password
+                        </label>
+                        <input type="password" id="confirm-password" placeholder="Confirm password">
+                    </div>
+                    <div id="reset-password-error" class="error-message hidden"></div>
+                    <div id="reset-password-success" class="success-message hidden"></div>
+                </div>
+                <div class="modal-footer">
+                    <button onclick="closeResetPasswordModal()" class="btn btn-secondary">Cancel</button>
+                    <button onclick="submitPasswordReset()" class="btn btn-primary">Reset Password</button>
+                </div>
+            </div>
+        </div>
+    </div>
 
     <!-- Scripts -->
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
