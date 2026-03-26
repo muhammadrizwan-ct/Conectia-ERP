@@ -2630,6 +2630,7 @@ async function updatePaymentSummary(payments) {
 
 function displayPaymentsTable(payments) {
     const container = document.getElementById('payments-table-container');
+    if (!container) return;
     const canEditData = Auth.hasDataActionPermission('edit');
     const canDeleteData = Auth.hasDataActionPermission('delete');
     
