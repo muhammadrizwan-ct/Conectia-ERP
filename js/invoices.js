@@ -1616,6 +1616,11 @@ function showRecordVendorInvoiceModal() {
     `;
 
     document.body.appendChild(modal);
+    applyInputConstraints({
+        'vendor-invoice-no': 'invoiceNo',
+        'vendor-invoice-amount': 'amount',
+        'vendor-invoice-notes': 'notes'
+    });
 }
 
 function saveVendorInvoice(event) {
@@ -1762,6 +1767,11 @@ function showEditVendorInvoiceModal(invoiceNo) {
     `;
 
     document.body.appendChild(modal);
+    applyInputConstraints({
+        'edit-vendor-invoice-no': 'invoiceNo',
+        'edit-vendor-invoice-amount': 'amount',
+        'edit-vendor-invoice-notes': 'notes'
+    });
 }
 
 function updateVendorInvoice(event, originalInvoiceNo) {
@@ -1909,6 +1919,11 @@ function showEditVendorInvoiceModal(invoiceNo) {
     `;
 
     document.body.appendChild(modal);
+    applyInputConstraints({
+        'edit-vendor-invoice-no': 'invoiceNo',
+        'edit-vendor-invoice-amount': 'amount',
+        'edit-vendor-invoice-notes': 'notes'
+    });
 }
 
 function updateVendorInvoice(event, originalInvoiceNo) {

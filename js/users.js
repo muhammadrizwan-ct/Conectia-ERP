@@ -128,6 +128,14 @@ async function loadUsers() {
     `;
 
     displayUsersList();
+
+    // Apply input constraints to user creation form
+    applyInputConstraints({
+        'account-username': 'username',
+        'account-email': 'email',
+        'account-password': 'password',
+        'account-fullname': 'name'
+    });
 }
 
 async function createAccountID() {

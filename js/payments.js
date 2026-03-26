@@ -1615,6 +1615,15 @@ function showRecordSalaryExpenseModal(existingExpense = null) {
     `;
 
     document.body.appendChild(modal);
+    applyInputConstraints({
+        'expense-employee-name': 'name',
+        'salary-basic': 'amount',
+        'salary-house': 'amount',
+        'salary-transport': 'amount',
+        'salary-other': 'amount',
+        'salary-tax-deduction': 'amount',
+        'salary-expense-notes': 'notes'
+    });
     calculateExpenseTotals();
 }
 
@@ -2108,6 +2117,15 @@ function showRecordDailyExpenseModal(existingExpense = null) {
     `;
 
     document.body.appendChild(modal);
+    applyInputConstraints({
+        'daily-expense-employee-name': 'name',
+        'daily-expense-working-days': 'days',
+        'daily-expense-travel': 'amount',
+        'daily-expense-meal': 'amount',
+        'daily-expense-fuel': 'amount',
+        'daily-expense-other': 'amount',
+        'daily-expense-notes': 'notes'
+    });
     calculateDailyExpenseTotals();
 }
 

@@ -814,6 +814,17 @@ function showAddVehicleModal() {
     `;
     
     document.body.appendChild(modal);
+    applyInputConstraints({
+        'vehicle-name': 'name',
+        'vehicle-reg': 'regNumber',
+        'vehicle-brand': 'brand',
+        'vehicle-model': 'model',
+        'vehicle-year': 'year',
+        'vehicle-imei': 'imei',
+        'vehicle-sim': 'sim',
+        'vehicle-rate': 'amount',
+        'vehicle-notes': 'notes'
+    });
     document.getElementById('vehicle-name').focus();
     
     // Load fleets for selected client
@@ -1224,6 +1235,14 @@ function editVehicle(vehicleId) {
     `;
     
     document.body.appendChild(modal);
+    applyInputConstraints({
+        'edit-vehicle-reg': 'regNumber',
+        'edit-vehicle-brand': 'brand',
+        'edit-vehicle-model': 'model',
+        'edit-vehicle-year': 'year',
+        'edit-vehicle-imei': 'imei',
+        'edit-vehicle-sim': 'sim'
+    });
     
     // Set selected values - client first, then load fleets
     setTimeout(() => {

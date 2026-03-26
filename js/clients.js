@@ -883,6 +883,14 @@ async function showAddClientModal() {
     `;
     
     document.body.appendChild(modal);
+    applyInputConstraints({
+        'client-name': 'name',
+        'client-email': 'email',
+        'client-phone': 'phone',
+        'client-address': 'address',
+        'client-ntn': 'ntn',
+        'client-default-rate': 'amount'
+    });
     document.getElementById('client-name').focus();
 
     const previewEl = document.getElementById('next-client-id-preview');
@@ -1083,6 +1091,14 @@ function editClient(clientId) {
     `;
     
     document.body.appendChild(modal);
+    applyInputConstraints({
+        'edit-client-name': 'name',
+        'edit-client-email': 'email',
+        'edit-client-phone': 'phone',
+        'edit-client-address': 'address',
+        'edit-client-ntn': 'ntn',
+        'edit-client-default-rate': 'amount'
+    });
     document.getElementById('edit-client-name').focus();
 }
 
@@ -1308,6 +1324,13 @@ function editVendor(vendorId) {
     `;
 
     document.body.appendChild(modal);
+    applyInputConstraints({
+        'edit-vendor-name': 'name',
+        'edit-vendor-email': 'email',
+        'edit-vendor-phone': 'phone',
+        'edit-vendor-address': 'address',
+        'edit-vendor-ntn': 'ntn'
+    });
     document.getElementById('edit-vendor-name').focus();
 }
 
