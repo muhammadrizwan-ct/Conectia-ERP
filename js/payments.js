@@ -739,6 +739,8 @@ async function renderClientPayments(contentEl) {
     if (monthFromEl) monthFromEl.value = '';
     if (monthToEl) monthToEl.value = '';
 
+    applyInputConstraints({ 'search-payments': 'search' });
+
     const savedPayments = loadPaymentsFromStorage();
     if (savedPayments && savedPayments.length > 0) {
         window.allPayments = savedPayments;
@@ -3335,6 +3337,11 @@ function showRecordPaymentModal(prefillInvoiceNo = '') {
     `;
     
     document.body.appendChild(modal);
+    applyInputConstraints({
+        'payment-reference': 'reference',
+        'tax-rate': 'percentage',
+        'payment-notes': 'notes'
+    });
     
     // Reset invoice tracking
     invoiceRowCounter = 0;
@@ -3524,6 +3531,10 @@ function addInvoiceRow() {
     `;
     
     container.appendChild(row);
+
+    // Apply input constraint to the allocate amount field
+    const amountEl = document.getElementById(`invoice-amount-${rowId}`);
+    if (amountEl) applyRule(amountEl, 'amount');
 }
 
 // Handle invoice selection
@@ -3952,6 +3963,13 @@ function showAddVendorModal() {
     `;
 
     document.body.appendChild(modal);
+    applyInputConstraints({
+        'vendor-name': 'name',
+        'vendor-email': 'email',
+        'vendor-phone': 'phone',
+        'vendor-address': 'address',
+        'vendor-ntn': 'ntn'
+    });
     document.getElementById('vendor-name').focus();
 }
 
@@ -4109,6 +4127,12 @@ function showRecordVendorPaymentModal() {
     `;
 
     document.body.appendChild(modal);
+    applyInputConstraints({
+        'vendor-payment-amount': 'amount',
+        'vendor-payment-tax-deduction': 'amount',
+        'vendor-payment-reference': 'reference',
+        'vendor-payment-notes': 'notes'
+    });
     onVendorSelectionChange();
 }
 

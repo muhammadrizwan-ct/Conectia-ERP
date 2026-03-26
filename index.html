@@ -146,6 +146,12 @@
     <script src="js/users.js?v=20260303-30"></script>
     <script src="js/admin.js?v=20260303-30"></script>
     <script>
+        // Apply input constraints to login form fields
+        applyInputConstraints({
+            'username': 'username',
+            'password': 'password'
+        });
+
         // Real-time input filtering for login fields
         const usernameInput = document.getElementById('username');
         if (usernameInput) {

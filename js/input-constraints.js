@@ -42,6 +42,10 @@ const INPUT_RULES = {
     days:       { maxLength: 3,   pattern: /[^0-9]/g,                  placeholder: '0-366' },
     // OTP
     otp:        { maxLength: 10,  pattern: /[^0-9]/g,                  placeholder: 'Digits only' },
+    // Percentage (0-100, with decimals)
+    percentage: { maxLength: 6,   pattern: /[^0-9.]/g,                 placeholder: '0.00' },
+    // Reference / cheque number
+    reference:  { maxLength: 50,  pattern: /[^a-zA-Z0-9\-/#\s.]/g,    placeholder: 'Reference / Cheque No' },
 };
 
 // Apply a single rule to an input element
@@ -83,6 +87,22 @@ function applyRule(inputEl, ruleName) {
             if (parts.length === 2 && parts[1].length > 2) {
                 v = parts[0] + '.' + parts[1].slice(0, 2);
             }
+            this.value = v.slice(0, rule.maxLength);
+        });
+    }
+
+    // Percentage fields: prevent multiple dots, max 100
+    if (ruleName === 'percentage') {
+        inputEl.addEventListener('input', function () {
+            let v = this.value.replace(/[^0-9.]/g, '');
+            const parts = v.split('.');
+            if (parts.length > 2) {
+                v = parts[0] + '.' + parts.slice(1).join('');
+            }
+            if (parts.length === 2 && parts[1].length > 2) {
+                v = parts[0] + '.' + parts[1].slice(0, 2);
+            }
+            if (parseFloat(v) > 100) v = '100';
             this.value = v.slice(0, rule.maxLength);
         });
     }
