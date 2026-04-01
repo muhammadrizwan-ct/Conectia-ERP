@@ -268,12 +268,56 @@ async function renderClientMonthStatusReport() {
     const filterEl = document.getElementById('reports-client-filter');
     if (!graphEl || !summaryEl) return;
 
-    const [invoices, clients] = await Promise.all([getReportsInvoices(), getReportsClients()]);
+    const [invoices, clients, payments] = await Promise.all([
+        getReportsInvoices(),
+        getReportsClients(),
+        (typeof fetchPaymentsFromSupabase === 'function') ? fetchPaymentsFromSupabase() : Promise.resolve([])
+    ]);
+
+    // Build payment totals per invoice from the payments table
+    const paymentsByInvoice = {};
+    (payments || []).forEach((payment) => {
+        const amount = normalizeReportMoney(payment.amount ?? payment.netAmount ?? payment.net_amount ?? 0);
+        const lineItems = Array.isArray(payment.lineItems) ? payment.lineItems : [];
+        if (lineItems.length > 0) {
+            lineItems.forEach((item) => {
+                const invNo = String(item.invoiceNo || '').trim();
+                if (invNo) {
+                    paymentsByInvoice[invNo] = (paymentsByInvoice[invNo] || 0) + normalizeReportMoney(item.allocatedAmount ?? item.amount ?? 0);
+                }
+            });
+        } else {
+            const invNo = String(payment.invoiceNo || '').trim();
+            if (invNo) {
+                paymentsByInvoice[invNo] = (paymentsByInvoice[invNo] || 0) + amount;
+            }
+        }
+    });
+
+    // Enrich invoices with actual paid amounts from payments table
+    const enrichedInvoices = invoices.map((inv) => {
+        const invNo = String(inv.invoiceNo || '').trim();
+        const invoicePaid = normalizeReportMoney(inv.paidAmount);
+        const paymentsPaid = paymentsByInvoice[invNo] || 0;
+        const actualPaid = Math.max(invoicePaid, paymentsPaid);
+        const totalAmount = normalizeReportMoney(inv.totalAmount);
+        const actualBalance = Math.max(totalAmount - actualPaid, 0);
+        const derivedStatus = actualPaid >= totalAmount && totalAmount > 0 ? 'Paid'
+            : actualPaid > 0 ? 'Partial'
+            : (inv.status || 'Pending');
+        return {
+            ...inv,
+            paidAmount: actualPaid,
+            balance: actualBalance,
+            status: derivedStatus
+        };
+    });
+
     const months = getLast12MonthKeys();
     const monthKeySet = new Set(months.map((m) => m.key));
     const selectedClient = filterEl?.value || '';
 
-    const filteredInvoices = invoices.filter((inv) => {
+    const filteredInvoices = enrichedInvoices.filter((inv) => {
         const invClient = String(inv?.clientName || '').trim();
         if (!invClient) return false;
         if (!selectedClient) return true;
@@ -295,15 +339,9 @@ async function renderClientMonthStatusReport() {
     });
     const clientNames = Array.from(allClientNames).sort((a, b) => a.localeCompare(b));
 
-    const totalAmount = filteredInvoices.reduce((sum, inv) => sum + (Number(inv.totalAmount) || 0), 0);
-    const totalPaid = filteredInvoices.reduce((sum, inv) => sum + (Number(inv.paidAmount) || 0), 0);
-    const totalPending = filteredInvoices.reduce((sum, inv) => {
-        const balance = Number(inv.balance);
-        if (!Number.isNaN(balance)) return sum + Math.max(balance, 0);
-        const amount = Number(inv.totalAmount) || 0;
-        const paid = Number(inv.paidAmount) || 0;
-        return sum + Math.max(amount - paid, 0);
-    }, 0);
+    const totalAmount = filteredInvoices.reduce((sum, inv) => sum + normalizeReportMoney(inv.totalAmount), 0);
+    const totalPaid = filteredInvoices.reduce((sum, inv) => sum + normalizeReportMoney(inv.paidAmount), 0);
+    const totalPending = filteredInvoices.reduce((sum, inv) => sum + normalizeReportMoney(inv.balance), 0);
 
     summaryEl.innerHTML = `
         <div style="background: #e3f2fd; padding: 12px; border-radius: 6px; border-left: 3px solid #2563eb;">
@@ -346,10 +384,8 @@ async function renderClientMonthStatusReport() {
             byMonth[monthKey].push(inv);
         });
 
-        const clientPayments = clientInvoices.reduce((sum, inv) => {
-            return sum + normalizeReportMoney(inv.paidAmount ?? inv.paid_amount ?? inv.receivedAmount ?? 0);
-        }, 0);
-        const clientPending = clientInvoices.reduce((sum, inv) => sum + getInvoiceBalanceAmount(inv), 0);
+        const clientPaidTotal = clientInvoices.reduce((sum, inv) => sum + normalizeReportMoney(inv.paidAmount), 0);
+        const clientPendingTotal = clientInvoices.reduce((sum, inv) => sum + normalizeReportMoney(inv.balance), 0);
 
         html += '<tr style="height: 42px;">';
         html += `<td><strong>${clientName}</strong></td>`;
@@ -360,26 +396,22 @@ async function renderClientMonthStatusReport() {
             let tooltip = 'No invoice';
 
             if (list.length > 0) {
-                const monthInvoiced = list.reduce((sum, inv) => {
-                    return sum + normalizeReportMoney(inv.totalAmount ?? inv.total_amount ?? inv.total ?? 0);
-                }, 0);
-                const monthPaid = list.reduce((sum, inv) => {
-                    return sum + normalizeReportMoney(inv.paidAmount ?? inv.paid_amount ?? inv.receivedAmount ?? 0);
-                }, 0);
-                const monthPending = list.reduce((sum, inv) => sum + getInvoiceBalanceAmount(inv), 0);
+                const monthInvoiced = list.reduce((sum, inv) => sum + normalizeReportMoney(inv.totalAmount), 0);
+                const monthPaid = list.reduce((sum, inv) => sum + normalizeReportMoney(inv.paidAmount), 0);
+                const monthPending = list.reduce((sum, inv) => sum + normalizeReportMoney(inv.balance), 0);
 
-                const hasPaid = list.some((inv) => {
-                    const paidAmount = normalizeReportMoney(inv.paidAmount ?? inv.paid_amount ?? inv.receivedAmount ?? 0);
-                    const status = String(inv.status || '').toLowerCase();
-                    return paidAmount > 0 || status === 'paid' || status === 'partial';
-                });
+                const fullyPaid = monthPending <= 0 && monthInvoiced > 0;
+                const partiallyPaid = monthPaid > 0 && monthPending > 0;
 
-                if (hasPaid) {
+                if (fullyPaid) {
                     cellColor = '#22c55e';
-                    tooltip = `Payment made | Invoiced: ${formatPKR(monthInvoiced)} | Paid: ${formatPKR(monthPaid)} | Pending: ${formatPKR(monthPending)}`;
+                    tooltip = `Fully Paid | Invoiced: ${formatPKR(monthInvoiced)} | Paid: ${formatPKR(monthPaid)}`;
+                } else if (partiallyPaid) {
+                    cellColor = '#f97316';
+                    tooltip = `Partially Paid | Invoiced: ${formatPKR(monthInvoiced)} | Paid: ${formatPKR(monthPaid)} | Pending: ${formatPKR(monthPending)}`;
                 } else {
-                    cellColor = '#facc15';
-                    tooltip = `Pending invoice | Invoiced: ${formatPKR(monthInvoiced)} | Paid: ${formatPKR(monthPaid)} | Pending: ${formatPKR(monthPending)}`;
+                    cellColor = '#ef4444';
+                    tooltip = `Unpaid | Invoiced: ${formatPKR(monthInvoiced)} | Pending: ${formatPKR(monthPending)}`;
                 }
             }
 
@@ -388,12 +420,21 @@ async function renderClientMonthStatusReport() {
             </td>`;
         });
 
-        html += `<td style="text-align:right; font-weight:600; color:#16a34a;">${formatPKR(clientPayments)}</td>`;
-        html += `<td style="text-align:right; font-weight:600; color:#ca8a04;">${formatPKR(clientPending)}</td>`;
+        html += `<td style="text-align:right; font-weight:600; color:#16a34a;">${formatPKR(clientPaidTotal)}</td>`;
+        html += `<td style="text-align:right; font-weight:600; color:#ca8a04;">${formatPKR(clientPendingTotal)}</td>`;
         html += '</tr>';
     });
 
     html += '</tbody></table>';
+
+    // Color legend
+    html += `<div style="display: flex; gap: 16px; margin-top: 12px; font-size: 12px; color: var(--gray-600); align-items: center;">
+        <span style="display:flex; align-items:center; gap:4px;"><span style="width:14px;height:14px;border-radius:3px;background:#22c55e;display:inline-block;"></span> Fully Paid</span>
+        <span style="display:flex; align-items:center; gap:4px;"><span style="width:14px;height:14px;border-radius:3px;background:#f97316;display:inline-block;"></span> Partially Paid</span>
+        <span style="display:flex; align-items:center; gap:4px;"><span style="width:14px;height:14px;border-radius:3px;background:#ef4444;display:inline-block;"></span> Unpaid</span>
+        <span style="display:flex; align-items:center; gap:4px;"><span style="width:14px;height:14px;border-radius:3px;background:#d1d5db;display:inline-block;"></span> No Invoice</span>
+    </div>`;
+
     html += '</div>';
     graphEl.innerHTML = html;
 }
