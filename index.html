@@ -125,12 +125,18 @@
     <script src="https://cdn.sheetjs.com/xlsx-0.20.2/package/dist/xlsx.full.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js"></script>
     <script src="js/config.js?v=20260303-30"></script>
-    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-        <script>window.supabase = window.supabase || supabase;
-        window.supabaseClient = window.supabase.createClient(
-            CONFIG.SUPABASE_URL,
-            CONFIG.SUPABASE_ANON_KEY
-        );
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.49.1/dist/umd/supabase.min.js"></script>
+        <script>
+        try {
+            var _sb = window.supabase || (typeof supabase !== 'undefined' ? supabase : null);
+            if (_sb && typeof _sb.createClient === 'function') {
+                window.supabaseClient = _sb.createClient(CONFIG.SUPABASE_URL, CONFIG.SUPABASE_ANON_KEY);
+            } else {
+                console.error('Supabase library not loaded correctly. Global:', typeof supabase, 'Window:', typeof window.supabase);
+            }
+        } catch(e) {
+            console.error('Supabase init error:', e);
+        }
         </script>
     <script src="js/api.js?v=20260303-30"></script>
     <script src="js/input-constraints.js?v=20260326-02"></script>
