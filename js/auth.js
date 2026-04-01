@@ -267,9 +267,11 @@ class AuthService {
                 fullname: profile.fullname || profile.username || baseUser.fullname,
                 name: profile.fullname || profile.username || baseUser.name,
                 status: profile.status || baseUser.status,
-                permissions: profile.permissions && typeof profile.permissions === 'object'
-                    ? profile.permissions
-                    : {}
+                permissions: (function(p) {
+                    if (!p) return {};
+                    if (typeof p === 'string') { try { return JSON.parse(p); } catch(e) { return {}; } }
+                    return typeof p === 'object' ? p : {};
+                })(profile.permissions)
             };
         } catch (error) {
             console.error('Failed to resolve user profile:', error);
@@ -490,7 +492,9 @@ class AuthService {
 
     setPermissions(role, customPermissions = null) {
         const defaults = this.getDefaultPermissions(role);
-        const custom = customPermissions && typeof customPermissions === 'object' ? customPermissions : {};
+        let custom = customPermissions || {};
+        if (typeof custom === 'string') { try { custom = JSON.parse(custom); } catch(e) { custom = {}; } }
+        if (typeof custom !== 'object' || custom === null) { custom = {}; }
         this.permissions = {
             ...defaults,
             ...custom
@@ -846,7 +850,7 @@ function renderSidebar() {
     
     let html = '';
     navItems.forEach(item => {
-        if (permissions && (permissions[item.permission] || item.permission === 'canViewDashboard')) {
+        if (permissions && permissions[item.permission]) {
             if (item.children && item.children.length > 0) {
                 html += `
                     <div class="nav-item nav-parent" data-page="${item.page}" onclick="toggleSidebarSubmenu('${item.page}', '${item.children[0].page}')">
