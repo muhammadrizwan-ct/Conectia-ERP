@@ -210,7 +210,7 @@ async function createAccountID() {
 
     const candidatePayloads = [
         {
-            ...(authUserId ? { id: authUserId } : {}),
+            ...(authUserId ? { auth_user_id: authUserId } : {}),
             username,
             email,
             password: await hashPasswordSecure(password),
@@ -221,7 +221,7 @@ async function createAccountID() {
             status: 'active'
         },
         {
-            ...(authUserId ? { id: authUserId } : {}),
+            ...(authUserId ? { auth_user_id: authUserId } : {}),
             username,
             email,
             password: await hashPasswordSecure(password),
