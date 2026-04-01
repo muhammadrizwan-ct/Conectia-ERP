@@ -2842,7 +2842,9 @@ function generateInvoiceItemsRows(invoice) {
             });
         } else {
             // Vehicle Details: Show all individual vehicles with registration numbers
-            invoice.items.forEach(item => {
+            const vehicleItems = invoice.items.filter(item => !item.isCustomItem);
+            const customItems = invoice.items.filter(item => item.isCustomItem);
+            vehicleItems.forEach(item => {
                 const itemUnitPrice = (item.unitPrice || item.monthlyRate) || 0;
                     const itemTax = itemUnitPrice * CONFIG.TAX_RATE;
                     const itemAmount = itemUnitPrice + itemTax;
@@ -2854,6 +2856,21 @@ function generateInvoiceItemsRows(invoice) {
                          </td>`;
                     rows += `<td style="text-align: right;">${formatPKR(itemUnitPrice)}</td>`;
                     rows += `<td style="text-align: right;">${formatPKR(itemTax)}</td>`;
+                rows += `<td style="text-align: right; font-weight: 600;">${formatPKR(itemAmount)}</td>`;
+                rows += `</tr>`;
+            });
+            customItems.forEach(item => {
+                const itemUnitPrice = (item.unitPrice || item.monthlyRate) || 0;
+                const itemTax = item.customTaxAmount != null ? item.customTaxAmount : (itemUnitPrice * CONFIG.TAX_RATE);
+                const itemAmount = itemUnitPrice + itemTax;
+                rows += `<tr>`;
+                rows += `<td style="text-align: center; font-weight: 600;">${srNo++}</td>`;
+                rows += `<td>
+                            <strong style="font-size: 11px;">${item.registrationNo || item.vehicleName || 'Custom Item'}</strong><br>
+                            <span style="font-size: 9px; color: #6b7280;">Custom Item</span>
+                         </td>`;
+                rows += `<td style="text-align: right;">${formatPKR(itemUnitPrice)}</td>`;
+                rows += `<td style="text-align: right;">${formatPKR(itemTax)}</td>`;
                 rows += `<td style="text-align: right; font-weight: 600;">${formatPKR(itemAmount)}</td>`;
                 rows += `</tr>`;
             });
@@ -2914,6 +2931,56 @@ function generateInvoiceDetailsHTML(invoice) {
 // ============================================ //
 // INVOICE GENERATION MODAL
 // ============================================ //
+
+// Custom invoice item management
+let customInvoiceItemCounter = 0;
+
+function addCustomInvoiceItem() {
+    const listEl = document.getElementById('custom-items-list');
+    if (!listEl) return;
+    customInvoiceItemCounter++;
+    const id = customInvoiceItemCounter;
+    const defaultTax = (CONFIG.TAX_RATE * 100).toFixed(1);
+    const row = document.createElement('div');
+    row.className = 'custom-invoice-item-row';
+    row.dataset.itemId = id;
+    row.style.cssText = 'display: grid; grid-template-columns: 2fr 1fr 1fr auto; gap: 8px; align-items: start; margin-bottom: 8px; padding: 10px; background: var(--gray-50); border: 1px solid var(--gray-200); border-radius: var(--radius);';
+    row.innerHTML = `
+        <div>
+            <input type="text" class="custom-item-desc" placeholder="Description (e.g. Setup Fee, Consulting)" style="width: 100%; padding: 8px; border: 1px solid var(--gray-300); border-radius: 4px;" maxlength="200">
+        </div>
+        <div>
+            <input type="number" class="custom-item-price" placeholder="Unit Price" step="0.01" min="0" style="width: 100%; padding: 8px; border: 1px solid var(--gray-300); border-radius: 4px;">
+        </div>
+        <div>
+            <input type="number" class="custom-item-tax" placeholder="Tax %" step="0.1" min="0" max="100" value="${defaultTax}" style="width: 100%; padding: 8px; border: 1px solid var(--gray-300); border-radius: 4px;">
+        </div>
+        <div>
+            <button type="button" class="btn btn-sm" onclick="removeCustomInvoiceItem(${id})" style="color: var(--danger); padding: 8px; border: 1px solid var(--gray-300); border-radius: 4px; background: white; cursor: pointer;">
+                <i class="fas fa-trash"></i>
+            </button>
+        </div>
+    `;
+    // Add header row if this is the first item
+    if (listEl.querySelectorAll('.custom-invoice-item-row').length === 0) {
+        const header = document.createElement('div');
+        header.id = 'custom-items-header';
+        header.style.cssText = 'display: grid; grid-template-columns: 2fr 1fr 1fr auto; gap: 8px; margin-bottom: 4px; font-size: 12px; font-weight: 600; color: var(--gray-600);';
+        header.innerHTML = '<div>Description</div><div>Unit Price</div><div>Tax %</div><div></div>';
+        listEl.appendChild(header);
+    }
+    listEl.appendChild(row);
+}
+
+function removeCustomInvoiceItem(id) {
+    const row = document.querySelector(`.custom-invoice-item-row[data-item-id="${id}"]`);
+    if (row) row.remove();
+    const listEl = document.getElementById('custom-items-list');
+    if (listEl && listEl.querySelectorAll('.custom-invoice-item-row').length === 0) {
+        const header = document.getElementById('custom-items-header');
+        if (header) header.remove();
+    }
+}
 
 // Show generate invoice modal
 async function showGenerateInvoiceModal() {
@@ -3154,6 +3221,23 @@ async function showGenerateInvoiceModal() {
                         Applies when using Fleet Details.
                     </small>
                 </div>
+
+                <!-- Custom Line Items Section -->
+                <div style="margin-top: 16px; border: 1px solid var(--gray-200); border-radius: var(--radius); padding: 16px;">
+                    <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 12px;">
+                        <label style="font-weight: 600; margin: 0;">
+                            <i class="fas fa-plus-circle" style="color: var(--primary); margin-right: 4px;"></i>
+                            Custom Items (Optional)
+                        </label>
+                        <button type="button" class="btn btn-sm btn-primary" onclick="addCustomInvoiceItem()">
+                            <i class="fas fa-plus"></i> Add Item
+                        </button>
+                    </div>
+                    <small style="color: var(--gray-600); font-size: 12px; display: block; margin-bottom: 12px;">
+                        Add additional line items with custom description, unit price and tax. These will appear alongside vehicle items on the invoice.
+                    </small>
+                    <div id="custom-items-list"></div>
+                </div>
                 
                 <div id="invoice-preview" style="margin-top: 20px; padding: 16px; background: var(--gray-100); border-radius: var(--radius); display: none;">
                     <h4 style="display: flex; align-items: center; gap: 8px; margin-bottom: 12px;">
@@ -3202,8 +3286,29 @@ async function showGenerateInvoiceModal() {
                 });
             });
             
-            if (selectedVehicles.length === 0) {
-                showNotification('Please select at least one vehicle', 'error');
+            // Collect custom items
+            const customItems = [];
+            document.querySelectorAll('.custom-invoice-item-row').forEach((row, idx) => {
+                const desc = row.querySelector('.custom-item-desc')?.value?.trim() || '';
+                const unitPrice = parseFloat(row.querySelector('.custom-item-price')?.value) || 0;
+                const taxRate = parseFloat(row.querySelector('.custom-item-tax')?.value) || 0;
+                if (desc && unitPrice > 0) {
+                    const taxAmount = unitPrice * (taxRate / 100);
+                    customItems.push({
+                        registrationNo: desc,
+                        vehicleName: desc,
+                        category: 'Custom Item',
+                        monthlyRate: unitPrice,
+                        unitPrice: unitPrice,
+                        customTaxRate: taxRate / 100,
+                        customTaxAmount: taxAmount,
+                        isCustomItem: true
+                    });
+                }
+            });
+
+            if (selectedVehicles.length === 0 && customItems.length === 0) {
+                showNotification('Please select at least one vehicle or add a custom item', 'error');
                 return false;
             }
             
@@ -3264,8 +3369,13 @@ async function showGenerateInvoiceModal() {
             
             try {
                 // Create invoice object
-                const subtotal = selectedVehicles.reduce((sum, v) => sum + v.monthlyRate, 0);
-                const taxAmount = subtotal * CONFIG.TAX_RATE;
+                const allItems = [...selectedVehicles, ...customItems];
+                const vehicleSubtotal = selectedVehicles.reduce((sum, v) => sum + v.monthlyRate, 0);
+                const vehicleTax = vehicleSubtotal * CONFIG.TAX_RATE;
+                const customSubtotal = customItems.reduce((sum, v) => sum + v.unitPrice, 0);
+                const customTax = customItems.reduce((sum, v) => sum + (v.customTaxAmount || 0), 0);
+                const subtotal = vehicleSubtotal + customSubtotal;
+                const taxAmount = vehicleTax + customTax;
                 const totalAmount = subtotal + taxAmount;
                 
                 const newInvoice = {
@@ -3286,7 +3396,7 @@ async function showGenerateInvoiceModal() {
                     balance: totalAmount,
                     invoiceType,
                     descriptionMode,
-                    items: selectedVehicles,
+                    items: allItems,
                     createdDate: new Date().toISOString()
                 };
                 
@@ -4043,6 +4153,8 @@ window.fetchVendorInvoicesFromSupabase = fetchVendorInvoicesFromSupabase;
 window.saveVendorInvoiceToSupabase = saveVendorInvoiceToSupabase;
 window.deleteVendorInvoiceFromSupabase = deleteVendorInvoiceFromSupabase;
 window.showGenerateInvoiceModal = showGenerateInvoiceModal;
+window.addCustomInvoiceItem = addCustomInvoiceItem;
+window.removeCustomInvoiceItem = removeCustomInvoiceItem;
 window.viewInvoicePDF = viewInvoicePDF;
 window.downloadInvoicePDF = downloadInvoicePDF;
 window.showInvoiceDetails = showInvoiceDetails;

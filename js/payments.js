@@ -2894,17 +2894,6 @@ function persistPaymentsCache(payments = []) {
 async function renderPaymentsTab(contentEl) {
     const activeTab = window.paymentActiveTab || 'client';
     contentEl.innerHTML = `
-        <div class="ledger-tabs" style="margin-bottom: 16px;">
-            <button class="ledger-tab ${activeTab === 'client' ? 'active' : ''}" data-payment-tab="client" onclick="setActivePaymentTab('client')">
-                <i class="fas fa-hand-holding-usd"></i> Client Payments
-            </button>
-            <button class="ledger-tab ${activeTab === 'vendor' ? 'active' : ''}" data-payment-tab="vendor" onclick="setActivePaymentTab('vendor')">
-                <i class="fas fa-truck"></i> Vendor Payments
-            </button>
-            <button class="ledger-tab ${activeTab === 'expenses' ? 'active' : ''}" data-payment-tab="expenses" onclick="setActivePaymentTab('expenses')">
-                <i class="fas fa-receipt"></i> Expenses
-            </button>
-        </div>
         <div id="payment-tab-inner-content" class="ledger-tab-content"></div>
     `;
 
