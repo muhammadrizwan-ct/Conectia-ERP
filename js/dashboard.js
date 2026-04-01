@@ -81,8 +81,12 @@ function collectDashboardMonthKeys(dataStore = getDashboardStore()) {
     addFromRecords(dataStore.vehicles, ['installationDate', 'installDate', 'install_date', 'created_at', 'createdAt', 'dateAdded']);
     addFromRecords(dataStore.invoices, ['invoiceDate', 'invoice_date', 'date', 'created_at', 'createdAt']);
 
-    // Ensure current month is always available
-    keys.add(getCurrentMonthKey());
+    // Always include the last 12 months so users can browse previous months
+    const now = new Date();
+    for (let i = 0; i < 12; i++) {
+        const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
+        keys.add(`${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`);
+    }
 
     return Array.from(keys).sort((a, b) => b.localeCompare(a));
 }
