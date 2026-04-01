@@ -215,7 +215,7 @@ async function fetchPaymentsFromSupabase() {
 
     const [invoiceRows, clientRows] = await Promise.all([
         (async () => {
-            const { data: invoices } = await selectWithRetry(() => supabase.from('invoices').select('id, invoice_no, client_id, client_name'));
+            const { data: invoices } = await selectWithRetry(() => supabase.from('invoices').select('*'));
             return Array.isArray(invoices) ? invoices : [];
         })(),
         (async () => {

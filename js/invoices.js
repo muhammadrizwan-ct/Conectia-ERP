@@ -293,6 +293,10 @@ async function fetchInvoicesFromSupabase() {
         console.error('Supabase fetch error:', error);
         return [];
     }
+    // Log raw column names once to help debug schema
+    if (data && data.length > 0) {
+        console.log('[Invoices] Raw Supabase columns:', Object.keys(data[0]));
+    }
     return (data || []).map((invoice) => normalizeInvoiceRecord(invoice));
 }
 
