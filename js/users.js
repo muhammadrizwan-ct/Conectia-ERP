@@ -48,12 +48,13 @@ async function fetchUsersFromSupabase() {
 async function saveUserToSupabase(user) {
     const { data, error } = await supabase
         .from('users')
-        .insert([user]);
+        .insert([user])
+        .select('*');
     if (error) {
         console.error('Supabase insert error:', error);
-        return null;
+        return { error };
     }
-    return data && data[0];
+    return data && data[0] ? data[0] : { success: true };
 }
 // Users Management Module
 async function loadUsers() {
@@ -185,28 +186,74 @@ async function createAccountID() {
 
     const permissions = getDefaultUserPermissions(role);
     const passwordHash = await hashPasswordSecure(password);
-    const newAccount = {
-        id: generateAccountID(),
-        username,
-        email,
-        password: passwordHash,
-        password_hash: passwordHash,
-        password_algorithm: 'sha256',
-        fullname,
-        role,
-        permissions,
-        createdAt: new Date().toISOString(),
-        status: 'active'
-    };
+    const accountId = generateAccountID();
+    const now = new Date().toISOString();
 
-    const savedUser = await saveUserToSupabase(newAccount);
+    const candidatePayloads = [
+        {
+            id: accountId,
+            username,
+            email,
+            password: passwordHash,
+            password_hash: passwordHash,
+            password_algorithm: 'sha256',
+            fullname,
+            role,
+            permissions,
+            created_at: now,
+            status: 'active'
+        },
+        {
+            id: accountId,
+            username,
+            email,
+            password: passwordHash,
+            password_hash: passwordHash,
+            password_algorithm: 'sha256',
+            fullname,
+            role,
+            permissions,
+            createdAt: now,
+            status: 'active'
+        }
+    ];
+
+    let savedUser = null;
+    let lastError = null;
+
+    for (const payload of candidatePayloads) {
+        const result = await saveUserToSupabase(payload);
+        if (result && !result.error) {
+            savedUser = result;
+            break;
+        }
+        lastError = result?.error;
+
+        // If error is about a missing column, try removing it
+        const msg = String(lastError?.message || '');
+        const colMatch = msg.match(/Could not find the '([^']+)' column/i) ||
+                         msg.match(/column "([^"]+)" .* does not exist/i);
+        if (colMatch) {
+            const badCol = colMatch[1];
+            const retryPayload = { ...payload };
+            delete retryPayload[badCol];
+            const retryResult = await saveUserToSupabase(retryPayload);
+            if (retryResult && !retryResult.error) {
+                savedUser = retryResult;
+                break;
+            }
+            lastError = retryResult?.error;
+        }
+    }
+
     if (!savedUser) {
-        alert('Failed to create user. Please try again.');
+        const errMsg = lastError?.message || 'Unknown error';
+        alert(`Failed to create user: ${errMsg}`);
         return;
     }
 
     const idType = role === 'admin' ? 'Admin ID' : 'User ID';
-    logAuditAction('CREATE', idType, newAccount.id, newAccount.username, `Created ${role} user: ${fullname}`);
+    logAuditAction('CREATE', idType, accountId, username, `Created ${role} user: ${fullname}`);
 
     document.getElementById('account-username').value = '';
     document.getElementById('account-email').value = '';
@@ -214,7 +261,7 @@ async function createAccountID() {
     document.getElementById('account-fullname').value = '';
     document.getElementById('account-role').value = 'user';
 
-    alert(`${role.toUpperCase()} ID created successfully!\nID: ${newAccount.id}\nUsername: ${username}`);
+    alert(`${role.toUpperCase()} ID created successfully!\nID: ${accountId}\nUsername: ${username}`);
     loadUsers();
 }
 
