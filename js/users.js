@@ -184,16 +184,36 @@ async function createAccountID() {
         return;
     }
 
+    // Step 1: Register in Supabase Auth so the user can log in
+    const supabaseClient = window.supabaseClient;
+    const { data: authData, error: authError } = await supabaseClient.auth.signUp({
+        email,
+        password,
+        options: {
+            data: {
+                username,
+                fullname,
+                role
+            }
+        }
+    });
+
+    if (authError) {
+        alert(`Failed to create auth account: ${authError.message}`);
+        return;
+    }
+
+    // Step 2: Insert into users table
     const permissions = getDefaultUserPermissions(role);
-    const passwordHash = await hashPasswordSecure(password);
-    const accountId = generateAccountID();
     const now = new Date().toISOString();
+    const authUserId = authData?.user?.id || null;
 
     const candidatePayloads = [
         {
+            ...(authUserId ? { id: authUserId } : {}),
             username,
             email,
-            password: passwordHash,
+            password: await hashPasswordSecure(password),
             fullname,
             role,
             permissions,
@@ -201,9 +221,10 @@ async function createAccountID() {
             status: 'active'
         },
         {
+            ...(authUserId ? { id: authUserId } : {}),
             username,
             email,
-            password: passwordHash,
+            password: await hashPasswordSecure(password),
             fullname,
             role,
             permissions,
@@ -246,7 +267,7 @@ async function createAccountID() {
         return;
     }
 
-    const savedId = savedUser?.id || accountId;
+    const savedId = savedUser?.id || authUserId || '';
 
     const idType = role === 'admin' ? 'Admin ID' : 'User ID';
     logAuditAction('CREATE', idType, savedId, username, `Created ${role} user: ${fullname}`);
