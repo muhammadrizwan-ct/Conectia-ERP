@@ -1,30 +1,6 @@
-// --- Supabase Integration ---
-var supabase = window.supabaseClient;
-
-// Fetch all invoices from Supabase
-async function fetchInvoicesFromSupabase() {
-    const { data, error } = await supabase
-        .from('invoices')
-        .select('*');
-    if (error) {
-        console.error('Supabase fetch error:', error);
-        return [];
-    }
-    return data || [];
-}
-
-// Fetch all clients from Supabase
-async function fetchClientsFromSupabase() {
-    const { data, error } = await supabase
-        .from('clients')
-        .select('*');
-    if (error) {
-        console.error('Supabase fetch error:', error);
-        return [];
-    }
-    return data || [];
-}
 // Reports Module
+// NOTE: fetchInvoicesFromSupabase() and fetchClientsFromSupabase() are defined
+// in invoices.js and clients.js respectively (with proper normalization).
 async function loadReports() {
     // Clear header actions
     document.getElementById('header-actions').innerHTML = '';
@@ -138,8 +114,9 @@ async function loadReports() {
             <div class="card-body">
                 <div id="reports-client-status-summary" style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; margin-bottom: 16px;"></div>
                 <div style="display: flex; align-items: center; gap: 18px; margin-bottom: 14px; flex-wrap: wrap;">
-                    <div style="display: flex; align-items: center; gap: 8px;"><span style="width: 10px; height: 10px; border-radius: 50%; background: #facc15; display: inline-block;"></span><small>Pending Invoice</small></div>
-                    <div style="display: flex; align-items: center; gap: 8px;"><span style="width: 10px; height: 10px; border-radius: 50%; background: #22c55e; display: inline-block;"></span><small>Payment Made</small></div>
+                    <div style="display: flex; align-items: center; gap: 8px;"><span style="width: 10px; height: 10px; border-radius: 50%; background: #22c55e; display: inline-block;"></span><small>Fully Paid</small></div>
+                    <div style="display: flex; align-items: center; gap: 8px;"><span style="width: 10px; height: 10px; border-radius: 50%; background: #f97316; display: inline-block;"></span><small>Partially Paid</small></div>
+                    <div style="display: flex; align-items: center; gap: 8px;"><span style="width: 10px; height: 10px; border-radius: 50%; background: #ef4444; display: inline-block;"></span><small>Unpaid</small></div>
                     <div style="display: flex; align-items: center; gap: 8px;"><span style="width: 10px; height: 10px; border-radius: 50%; background: #d1d5db; display: inline-block;"></span><small>No Invoice</small></div>
                 </div>
                 <div id="reports-client-status-graph" class="table-responsive"></div>
@@ -469,14 +446,6 @@ async function renderClientMonthStatusReport() {
     });
 
     html += '</tbody></table>';
-
-    // Color legend
-    html += `<div style="display: flex; gap: 16px; margin-top: 12px; font-size: 12px; color: var(--gray-600); align-items: center;">
-        <span style="display:flex; align-items:center; gap:4px;"><span style="width:14px;height:14px;border-radius:3px;background:#22c55e;display:inline-block;"></span> Fully Paid</span>
-        <span style="display:flex; align-items:center; gap:4px;"><span style="width:14px;height:14px;border-radius:3px;background:#f97316;display:inline-block;"></span> Partially Paid</span>
-        <span style="display:flex; align-items:center; gap:4px;"><span style="width:14px;height:14px;border-radius:3px;background:#ef4444;display:inline-block;"></span> Unpaid</span>
-        <span style="display:flex; align-items:center; gap:4px;"><span style="width:14px;height:14px;border-radius:3px;background:#d1d5db;display:inline-block;"></span> No Invoice</span>
-    </div>`;
 
     html += '</div>';
     graphEl.innerHTML = html;
