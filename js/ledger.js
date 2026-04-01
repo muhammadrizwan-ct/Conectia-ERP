@@ -663,7 +663,7 @@ function buildBankLedgerRows() {
         rows.push({
             type: 'client-payment',
             date: payment.paymentDate,
-            invoiceNo: payment.invoiceNo || getPaymentInvoiceText(payment) || '-',
+            invoiceNo: getPaymentInvoiceText(payment) || payment.invoiceNo || '-',
             details: `Client payment from ${clientName} (${paymentType}, Ref: ${reference})`,
             debit: 0,
             credit: amount,
