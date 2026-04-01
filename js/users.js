@@ -56,6 +56,33 @@ async function saveUserToSupabase(user) {
     }
     return data && data[0] ? data[0] : { success: true };
 }
+
+// Update an existing user in Supabase by username
+async function updateUserInSupabase(username, updates) {
+    const { data, error } = await supabase
+        .from('users')
+        .update(updates)
+        .eq('username', username)
+        .select('*');
+    if (error) {
+        console.error('Supabase update error:', error);
+        return { error };
+    }
+    return data && data[0] ? data[0] : { success: true };
+}
+
+// Delete a user from Supabase by username
+async function deleteUserFromSupabase(username) {
+    const { error } = await supabase
+        .from('users')
+        .delete()
+        .eq('username', username);
+    if (error) {
+        console.error('Supabase delete error:', error);
+        return { error };
+    }
+    return { success: true };
+}
 // Users Management Module
 async function loadUsers() {
     document.getElementById('header-actions').innerHTML = '';
@@ -733,7 +760,7 @@ function initializePermissionGroupToggles() {
     });
 }
 
-function saveUserPermissions(username) {
+async function saveUserPermissions(username) {
     const users = JSON.parse(localStorage.getItem('USERS_LIST') || '[]');
     const userIndex = users.findIndex(u => u.username === username);
 
@@ -745,6 +772,14 @@ function saveUserPermissions(username) {
         updatedPermissions[permissionKey] = checkbox.checked;
     });
 
+    // Save to Supabase
+    const result = await updateUserInSupabase(username, { permissions: updatedPermissions });
+    if (result?.error) {
+        showNotification(`Failed to save permissions: ${result.error.message}`, 'error');
+        return;
+    }
+
+    // Also update localStorage
     users[userIndex].permissions = updatedPermissions;
     localStorage.setItem('USERS_LIST', JSON.stringify(users));
 
@@ -777,7 +812,7 @@ function syncLoggedInUserPermissions(updatedUser) {
     renderSidebar();
 }
 
-function toggleUserStatus(username) {
+async function toggleUserStatus(username) {
     if (!ensureFeaturePermission('users', 'edit')) {
         return;
     }
@@ -788,19 +823,25 @@ function toggleUserStatus(username) {
     if (userIndex === -1) return;
 
     const oldStatus = users[userIndex].status;
-    users[userIndex].status = users[userIndex].status === 'active' ? 'inactive' : 'active';
-    const newStatus = users[userIndex].status;
-    
+    const newStatus = oldStatus === 'active' ? 'inactive' : 'active';
+
+    // Save to Supabase
+    const result = await updateUserInSupabase(username, { status: newStatus });
+    if (result?.error) {
+        alert(`Failed to update status: ${result.error.message}`);
+        return;
+    }
+
+    users[userIndex].status = newStatus;
     localStorage.setItem('USERS_LIST', JSON.stringify(users));
 
-    // Log audit action
     logAuditAction('UPDATE', 'User Status', users[userIndex].id, username, `Status changed from ${oldStatus} to ${newStatus}`);
 
     alert(`User status changed to: ${newStatus.toUpperCase()}`);
     loadUsers();
 }
 
-function deleteUserID(username) {
+async function deleteUserID(username) {
     if (!ensureFeaturePermission('users', 'delete')) {
         return;
     }
@@ -809,11 +850,17 @@ function deleteUserID(username) {
 
     let users = JSON.parse(localStorage.getItem('USERS_LIST') || '[]');
     const userToDelete = users.find(u => u.username === username);
-    
+
+    // Delete from Supabase
+    const result = await deleteUserFromSupabase(username);
+    if (result?.error) {
+        alert(`Failed to delete user: ${result.error.message}`);
+        return;
+    }
+
     users = users.filter(u => u.username !== username);
     localStorage.setItem('USERS_LIST', JSON.stringify(users));
 
-    // Log audit action
     if (userToDelete) {
         logAuditAction('DELETE', 'User ID', userToDelete.id, username, `Deleted user: ${userToDelete.fullname}`);
     }
@@ -949,6 +996,7 @@ window.createAccountID = createAccountID;
 window.filterUsers = filterUsers;
 window.viewUserPermissions = viewUserPermissions;
 window.editUserPermissions = editUserPermissions;
+window.saveUserPermissions = saveUserPermissions;
 window.showAuditLogModal = showAuditLogModal;
 window.toggleUserStatus = toggleUserStatus;
 window.deleteUserID = deleteUserID;
