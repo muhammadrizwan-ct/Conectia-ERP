@@ -296,15 +296,19 @@ async function renderClientMonthStatusReport() {
         (typeof fetchPaymentsFromSupabase === 'function') ? fetchPaymentsFromSupabase() : Promise.resolve([])
     ]);
 
-    console.log('[Reports 12M] Invoices fetched:', invoices.length, 'sample:', invoices.slice(0, 2).map(i => ({
+    console.log('[Reports 12M] Invoices fetched:', invoices.length);
+    console.table(invoices.map(i => ({
         invoiceNo: i.invoiceNo, clientName: i.clientName, invoiceDate: i.invoiceDate,
         month: i.month, totalAmount: i.totalAmount, paidAmount: i.paidAmount, balance: i.balance,
-        monthKey: getInvoiceMonthKey(i)
+        status: i.status, monthKey: getInvoiceMonthKey(i), created_at: i.created_at || i.createdDate
     })));
-    console.log('[Reports 12M] Payments fetched:', payments.length, 'sample:', payments.slice(0, 2).map(p => ({
-        invoiceNo: p.invoiceNo, clientName: p.clientName, amount: p.amount, lineItems: p.lineItems
+    console.log('[Reports 12M] Payments fetched:', payments.length);
+    console.table(payments.map(p => ({
+        invoiceNo: p.invoiceNo, clientName: p.clientName, amount: p.amount,
+        totalAmount: p.totalAmount, netAmount: p.netAmount,
+        lineItemCount: Array.isArray(p.lineItems) ? p.lineItems.length : 0
     })));
-    console.log('[Reports 12M] Month keys expected:', getLast12MonthKeys().map(m => m.key));
+    console.log('[Reports 12M] Expected month keys:', getLast12MonthKeys().map(m => m.key).join(', '));
 
     // Build payment totals per invoice from the payments table
     const paymentsByInvoice = {};
@@ -355,6 +359,13 @@ async function renderClientMonthStatusReport() {
         if (!selectedClient) return true;
         return invClient === selectedClient;
     }).filter((inv) => monthKeySet.has(getInvoiceMonthKey(inv)));
+
+    console.log('[Reports 12M] paymentsByInvoice:', JSON.stringify(paymentsByInvoice));
+    console.log('[Reports 12M] After enrichment + filter:', filteredInvoices.length, 'of', enrichedInvoices.length);
+    console.table(enrichedInvoices.map(i => ({
+        invoiceNo: i.invoiceNo, monthKey: getInvoiceMonthKey(i), inMonthSet: monthKeySet.has(getInvoiceMonthKey(i)),
+        totalAmount: i.totalAmount, paidAmount: i.paidAmount, balance: i.balance, status: i.status
+    })));
 
     const allClientNames = new Set();
     clients.forEach((client) => {
