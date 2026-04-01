@@ -219,7 +219,7 @@ async function fetchPaymentsFromSupabase() {
             return Array.isArray(invoices) ? invoices : [];
         })(),
         (async () => {
-            const { data: clients } = await selectWithRetry(() => supabase.from('clients').select('id, name, clientid, clientId'));
+            const { data: clients } = await selectWithRetry(() => supabase.from('clients').select('id, name'));
             return Array.isArray(clients) ? clients : [];
         })()
     ]);
