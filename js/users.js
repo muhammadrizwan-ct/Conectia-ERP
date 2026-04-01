@@ -791,37 +791,58 @@ function initializePermissionGroupToggles() {
     });
 }
 
+var _savingPermissions = false;
+
 async function saveUserPermissions(username) {
-    const users = JSON.parse(localStorage.getItem('USERS_LIST') || '[]');
-    const userIndex = users.findIndex(u => u.username === username);
-
-    if (userIndex === -1) return;
-
-    const updatedPermissions = {};
-    document.querySelectorAll('#edit-permissions-list .permission-checkbox').forEach((checkbox) => {
-        const permissionKey = checkbox.getAttribute('data-permission');
-        updatedPermissions[permissionKey] = checkbox.checked;
-    });
-
-    // Save to Supabase
-    console.log('[saveUserPermissions] Saving for:', username, 'permissions:', JSON.stringify(updatedPermissions));
-    const result = await updateUserInSupabase(username, { permissions: updatedPermissions });
-    console.log('[saveUserPermissions] Update result:', result);
-    if (result?.error) {
-        alert(`Failed to save permissions: ${result.error.message}`);
+    // Guard against double-fire (button click fires twice, second call finds no checkboxes)
+    if (_savingPermissions) {
+        console.log('[saveUserPermissions] Already saving, skipping duplicate call');
         return;
     }
+    _savingPermissions = true;
 
-    // Also update localStorage
-    users[userIndex].permissions = updatedPermissions;
-    localStorage.setItem('USERS_LIST', JSON.stringify(users));
+    try {
+        const users = JSON.parse(localStorage.getItem('USERS_LIST') || '[]');
+        const userIndex = users.findIndex(u => u.username === username);
 
-    syncLoggedInUserPermissions(users[userIndex]);
+        if (userIndex === -1) { _savingPermissions = false; return; }
 
-    logAuditAction('UPDATE', 'User Permissions', users[userIndex].id, username, 'Updated user access permissions');
-    closeModal();
-    loadUsers();
-    alert('User permissions updated successfully');
+        const checkboxes = document.querySelectorAll('#edit-permissions-list .permission-checkbox');
+        if (checkboxes.length === 0) {
+            console.warn('[saveUserPermissions] No checkboxes found — modal already closed, aborting');
+            _savingPermissions = false;
+            return;
+        }
+
+        const updatedPermissions = {};
+        checkboxes.forEach((checkbox) => {
+            const permissionKey = checkbox.getAttribute('data-permission');
+            updatedPermissions[permissionKey] = checkbox.checked;
+        });
+
+        // Save to Supabase
+        console.log('[saveUserPermissions] Saving for:', username, 'permissions:', JSON.stringify(updatedPermissions));
+        const result = await updateUserInSupabase(username, { permissions: updatedPermissions });
+        console.log('[saveUserPermissions] Update result:', result);
+        if (result?.error) {
+            alert(`Failed to save permissions: ${result.error.message}`);
+            _savingPermissions = false;
+            return;
+        }
+
+        // Also update localStorage
+        users[userIndex].permissions = updatedPermissions;
+        localStorage.setItem('USERS_LIST', JSON.stringify(users));
+
+        syncLoggedInUserPermissions(users[userIndex]);
+
+        logAuditAction('UPDATE', 'User Permissions', users[userIndex].id, username, 'Updated user access permissions');
+        closeModal();
+        loadUsers();
+        alert('User permissions updated successfully');
+    } finally {
+        _savingPermissions = false;
+    }
 }
 
 function syncLoggedInUserPermissions(updatedUser) {
