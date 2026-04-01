@@ -296,6 +296,18 @@ async function fetchInvoicesFromSupabase() {
     // Log raw column names once to help debug schema
     if (data && data.length > 0) {
         console.log('[Invoices] Raw Supabase columns:', Object.keys(data[0]));
+        console.log('[Invoices] Raw first record:', JSON.stringify(data[0]).substring(0, 500));
+        const testNormalized = normalizeInvoiceRecord(data[0]);
+        console.log('[Invoices] Normalized first record:', JSON.stringify({
+            invoiceNo: testNormalized.invoiceNo,
+            clientName: testNormalized.clientName,
+            totalAmount: testNormalized.totalAmount,
+            paidAmount: testNormalized.paidAmount,
+            balance: testNormalized.balance,
+            status: testNormalized.status,
+            invoiceDate: testNormalized.invoiceDate,
+            month: testNormalized.month
+        }));
     }
     return (data || []).map((invoice) => normalizeInvoiceRecord(invoice));
 }
