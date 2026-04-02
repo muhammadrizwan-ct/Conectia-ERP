@@ -445,12 +445,6 @@ async function viewTicketDetail(ticketId) {
                         </div>
                     </div>
                 </div>
-                <div class="modal-footer" style="display: flex; gap: 10px; justify-content: flex-end; padding: 16px; flex-shrink: 0; border-top: 1px solid var(--gray-200);">
-                    <button class="btn btn-secondary" onclick="closeModal()">Close</button>
-                    <button class="btn btn-primary" onclick="showUpdateTicketStatusModal('${escapeHtmlTickets(ticket.id)}')">
-                        <i class="fas fa-edit" style="margin-right: 4px;"></i> Update
-                    </button>
-                </div>
             </div>
         </div>
     `;
