@@ -394,12 +394,12 @@ async function viewTicketDetail(ticketId) {
 
     const modalHTML = `
         <div class="modal-overlay" onclick="closeModal()">
-            <div class="modal-content" onclick="event.stopPropagation()" style="max-width: 620px;">
-                <div class="modal-header">
+            <div class="modal-content" onclick="event.stopPropagation()" style="max-width: 620px; max-height: 90vh; display: flex; flex-direction: column; overflow: hidden;">
+                <div class="modal-header" style="flex-shrink: 0;">
                     <h3><i class="fas fa-ticket-alt" style="margin-right: 8px;"></i>${escapeHtmlTickets(ticket.ticket_number)}</h3>
                     <button class="modal-close" onclick="closeModal()">×</button>
                 </div>
-                <div class="modal-body" style="padding-bottom: 0;">
+                <div class="modal-body" style="padding-bottom: 0; overflow-y: auto; flex: 1; min-height: 0;">
                     <h4 style="margin-bottom: 12px;">${escapeHtmlTickets(ticket.title)}</h4>
                     ${ticket.description ? `<p style="color: var(--gray-600); margin-bottom: 16px; white-space: pre-wrap;">${escapeHtmlTickets(ticket.description)}</p>` : ''}
                     <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-bottom: 16px;">
@@ -445,7 +445,7 @@ async function viewTicketDetail(ticketId) {
                         </div>
                     </div>
                 </div>
-                <div class="modal-footer" style="display: flex; gap: 10px; justify-content: flex-end; padding: 16px;">
+                <div class="modal-footer" style="display: flex; gap: 10px; justify-content: flex-end; padding: 16px; flex-shrink: 0; border-top: 1px solid var(--gray-200);">
                     <button class="btn btn-secondary" onclick="closeModal()">Close</button>
                     <button class="btn btn-primary" onclick="showUpdateTicketStatusModal('${escapeHtmlTickets(ticket.id)}')">
                         <i class="fas fa-edit" style="margin-right: 4px;"></i> Update
