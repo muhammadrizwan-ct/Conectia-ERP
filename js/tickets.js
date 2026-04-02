@@ -514,7 +514,7 @@ async function viewTicketDetail(ticketId) {
                         <div id="ticket-comments-list" style="max-height: 250px; overflow-y: auto; margin-bottom: 12px; padding: 4px;">
                             ${commentsHTML}
                         </div>
-                        <div id="ticket-attachment-preview" style="display: none; margin-bottom: 8px; position: relative; display: inline-block;">
+                        <div id="ticket-attachment-preview" style="display: none; margin-bottom: 8px; position: relative;">
                             <img id="ticket-attachment-thumb" src="" style="max-width: 120px; max-height: 80px; border-radius: 6px; border: 1px solid var(--gray-300);" />
                             <button onclick="clearTicketAttachment()" style="position: absolute; top: -6px; right: -6px; background: var(--danger); color: white; border: none; border-radius: 50%; width: 20px; height: 20px; font-size: 12px; cursor: pointer; display: flex; align-items: center; justify-content: center; line-height: 1;">&times;</button>
                         </div>
