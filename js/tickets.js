@@ -302,12 +302,78 @@ async function fetchTicketComments(ticketId) {
 }
 
 // Add a comment to a ticket
+// Preview attachment before sending
+function previewTicketAttachment(input) {
+    const preview = document.getElementById('ticket-attachment-preview');
+    const thumb = document.getElementById('ticket-attachment-thumb');
+    if (input.files && input.files[0]) {
+        const file = input.files[0];
+        // Limit to 5MB
+        if (file.size > 5 * 1024 * 1024) {
+            showNotification('File too large. Maximum size is 5MB.', 'error');
+            input.value = '';
+            return;
+        }
+        const reader = new FileReader();
+        reader.onload = (e) => {
+            thumb.src = e.target.result;
+            preview.style.display = 'inline-block';
+        };
+        reader.readAsDataURL(file);
+    }
+}
+
+function clearTicketAttachment() {
+    const input = document.getElementById('ticket-attachment-input');
+    const preview = document.getElementById('ticket-attachment-preview');
+    if (input) input.value = '';
+    if (preview) preview.style.display = 'none';
+}
+
+// Upload attachment to Supabase Storage
+async function uploadTicketAttachment(file) {
+    const ext = file.name.split('.').pop().toLowerCase();
+    const allowed = ['png', 'jpg', 'jpeg', 'gif', 'webp', 'bmp'];
+    if (!allowed.includes(ext)) {
+        showNotification('Only image files are allowed (PNG, JPG, GIF, WEBP)', 'error');
+        return null;
+    }
+    const fileName = `${Date.now()}_${Math.random().toString(36).substring(2, 8)}.${ext}`;
+    const filePath = `comments/${fileName}`;
+
+    const { data, error } = await supabase.storage
+        .from('ticket-attachments')
+        .upload(filePath, file, { cacheControl: '3600', upsert: false });
+
+    if (error) {
+        console.error('Upload error:', error);
+        showNotification('Failed to upload attachment', 'error');
+        return null;
+    }
+
+    const { data: urlData } = supabase.storage
+        .from('ticket-attachments')
+        .getPublicUrl(filePath);
+
+    return urlData?.publicUrl || null;
+}
+
 async function addTicketComment(ticketId) {
     const input = document.getElementById('ticket-comment-input');
+    const fileInput = document.getElementById('ticket-attachment-input');
     const comment = (input?.value || '').trim();
-    if (!comment) {
-        showNotification('Please enter a comment', 'error');
+    const file = fileInput?.files?.[0] || null;
+
+    if (!comment && !file) {
+        showNotification('Please enter a comment or attach a screenshot', 'error');
         return;
+    }
+
+    // Upload attachment if present
+    let attachmentUrl = null;
+    if (file) {
+        attachmentUrl = await uploadTicketAttachment(file);
+        if (file && !attachmentUrl) return; // upload failed
     }
 
     const currentUser = Auth?.user?.username || Auth?.user?.email || 'Unknown';
@@ -317,9 +383,10 @@ async function addTicketComment(ticketId) {
         .from('ticket_comments')
         .insert([{
             ticket_id: ticketId,
-            comment: comment,
+            comment: comment || (attachmentUrl ? 'Attached a screenshot' : ''),
             created_by: currentUser,
-            created_by_id: currentUserId || null
+            created_by_id: currentUserId || null,
+            attachment_url: attachmentUrl
         }]);
 
     if (error) {
@@ -334,6 +401,7 @@ async function addTicketComment(ticketId) {
     // Refresh comments in the modal
     await refreshTicketComments(ticketId);
     if (input) input.value = '';
+    clearTicketAttachment();
 }
 
 // Refresh just the comments section inside the modal
@@ -379,6 +447,7 @@ function renderCommentsHTML(comments) {
                     <div style="font-weight: 600; font-size: 12px; color: ${isOwn ? '#1976d2' : 'var(--gray-700)'}; margin-bottom: 4px;">
                         ${escapeHtmlTickets(userLabel)}
                     </div>
+                    ${c.attachment_url ? `<div style="margin-bottom: 6px;"><a href="${escapeHtmlTickets(c.attachment_url)}" target="_blank" rel="noopener noreferrer"><img src="${escapeHtmlTickets(c.attachment_url)}" style="max-width: 200px; max-height: 150px; border-radius: 6px; border: 1px solid var(--gray-300); cursor: pointer;" alt="attachment" /></a></div>` : ''}
                     <div style="font-size: 14px; color: var(--gray-800); white-space: pre-wrap; word-break: break-word;">${escapeHtmlTickets(c.comment)}</div>
                     <div style="font-size: 11px; color: var(--gray-400); margin-top: 4px; text-align: right;">${escapeHtmlTickets(time)}</div>
                 </div>
@@ -445,7 +514,15 @@ async function viewTicketDetail(ticketId) {
                         <div id="ticket-comments-list" style="max-height: 250px; overflow-y: auto; margin-bottom: 12px; padding: 4px;">
                             ${commentsHTML}
                         </div>
+                        <div id="ticket-attachment-preview" style="display: none; margin-bottom: 8px; position: relative; display: inline-block;">
+                            <img id="ticket-attachment-thumb" src="" style="max-width: 120px; max-height: 80px; border-radius: 6px; border: 1px solid var(--gray-300);" />
+                            <button onclick="clearTicketAttachment()" style="position: absolute; top: -6px; right: -6px; background: var(--danger); color: white; border: none; border-radius: 50%; width: 20px; height: 20px; font-size: 12px; cursor: pointer; display: flex; align-items: center; justify-content: center; line-height: 1;">&times;</button>
+                        </div>
+                        <input type="file" id="ticket-attachment-input" accept="image/*" style="display: none;" onchange="previewTicketAttachment(this)" />
                         <div style="display: flex; gap: 8px; padding-bottom: 4px;">
+                            <button class="btn btn-secondary" onclick="document.getElementById('ticket-attachment-input').click()" style="align-self: flex-end; height: 38px; padding: 0 10px;" title="Attach screenshot">
+                                <i class="fas fa-paperclip"></i>
+                            </button>
                             <textarea id="ticket-comment-input" placeholder="Write a comment..." rows="2" maxlength="2000"
                                 style="flex: 1; padding: 8px 12px; border: 1px solid var(--gray-300); border-radius: 6px; resize: none; font-size: 14px;"
                                 onkeydown="if(event.key==='Enter'&&!event.shiftKey){event.preventDefault();addTicketComment('${escapeHtmlTickets(ticket.id)}');}"></textarea>
@@ -691,3 +768,5 @@ window.updateTicket = updateTicket;
 window.filterTickets = filterTickets;
 window.addTicketComment = addTicketComment;
 window.checkTicketUpdates = checkTicketUpdates;
+window.previewTicketAttachment = previewTicketAttachment;
+window.clearTicketAttachment = clearTicketAttachment;
