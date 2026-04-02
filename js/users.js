@@ -445,8 +445,8 @@ async function displayUsersList() {
     html += '</tr></thead><tbody>';
 
     users.forEach(user => {
-        const rawDate = user.createdAt || user.created_at || '';
-        const createdDate = rawDate ? new Date(rawDate).toLocaleDateString() : '-';
+        const rawDate = user.created_at || user.createdAt || '';
+        const createdDate = rawDate ? new Date(rawDate).toLocaleString() : '-';
         const roleClass = user.role === 'admin' ? 'background: #e3f2fd; color: #1976d2;' : 'background: #f3e5f5; color: #7b1fa2;';
         const statusClass = user.status === 'active' ? 'color: var(--success);' : 'color: var(--danger);';
         const safeUsername = escapeHtmlUsers(user.username);
