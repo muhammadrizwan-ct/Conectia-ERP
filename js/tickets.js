@@ -646,23 +646,35 @@ function updateTicketsBadge(count) {
 async function checkTicketUpdates() {
     try {
         const lastSeen = getTicketsLastSeen();
-        const { count, error } = await supabase
+
+        // Count tickets updated since last seen
+        const { count: ticketCount, error: ticketErr } = await supabase
             .from('tickets')
             .select('id', { count: 'exact', head: true })
             .gt('updated_at', lastSeen);
 
-        if (!error && typeof count === 'number') {
-            updateTicketsBadge(count);
-        }
+        // Count new comments since last seen
+        const { count: commentCount, error: commentErr } = await supabase
+            .from('ticket_comments')
+            .select('id', { count: 'exact', head: true })
+            .gt('created_at', lastSeen);
+
+        const total = (ticketErr ? 0 : (ticketCount || 0)) + (commentErr ? 0 : (commentCount || 0));
+        updateTicketsBadge(total);
     } catch (e) {
         // silently ignore
     }
 }
 
-// Check for ticket updates every 30 seconds
+// Check for ticket updates every 15 seconds
 setInterval(() => {
-    if (Auth?.isLoggedIn?.()) checkTicketUpdates();
-}, 30000);
+    if (Auth?.isLoggedIn?.()) {
+        // Skip if user is currently on tickets page (they see updates live)
+        const activeNav = document.querySelector('.nav-item.active');
+        const isOnTicketsPage = activeNav && activeNav.textContent.includes('Tickets');
+        if (!isOnTicketsPage) checkTicketUpdates();
+    }
+}, 15000);
 
 // Initial check after page load
 setTimeout(() => {
