@@ -276,8 +276,104 @@ async function createTicket() {
     loadTickets();
 }
 
-// View ticket detail
-function viewTicketDetail(ticketId) {
+// Fetch comments for a ticket
+async function fetchTicketComments(ticketId) {
+    const { data, error } = await supabase
+        .from('ticket_comments')
+        .select('*')
+        .eq('ticket_id', ticketId)
+        .order('created_at', { ascending: true });
+
+    if (error) {
+        console.error('Fetch comments error:', error);
+        return [];
+    }
+    return data || [];
+}
+
+// Add a comment to a ticket
+async function addTicketComment(ticketId) {
+    const input = document.getElementById('ticket-comment-input');
+    const comment = (input?.value || '').trim();
+    if (!comment) {
+        showNotification('Please enter a comment', 'error');
+        return;
+    }
+
+    const currentUser = Auth?.user?.username || Auth?.user?.email || 'Unknown';
+
+    const { error } = await supabase
+        .from('ticket_comments')
+        .insert([{
+            ticket_id: ticketId,
+            comment: comment,
+            created_by: currentUser
+        }]);
+
+    if (error) {
+        console.error('Add comment error:', error);
+        showNotification('Failed to add comment', 'error');
+        return;
+    }
+
+    // Also update ticket's updated_at
+    await supabase.from('tickets').update({ updated_at: new Date().toISOString() }).eq('id', ticketId);
+
+    // Refresh comments in the modal
+    await refreshTicketComments(ticketId);
+    if (input) input.value = '';
+}
+
+// Refresh just the comments section inside the modal
+async function refreshTicketComments(ticketId) {
+    const comments = await fetchTicketComments(ticketId);
+    const commentsContainer = document.getElementById('ticket-comments-list');
+    if (commentsContainer) {
+        commentsContainer.innerHTML = renderCommentsHTML(comments);
+        commentsContainer.scrollTop = commentsContainer.scrollHeight;
+    }
+}
+
+// Render comments HTML
+function renderCommentsHTML(comments) {
+    if (!comments || comments.length === 0) {
+        return '<p style="text-align: center; color: var(--gray-400); padding: 16px; font-size: 13px;">No comments yet. Be the first to comment.</p>';
+    }
+
+    const currentUser = Auth?.user?.username || Auth?.user?.email || '';
+
+    return comments.map(c => {
+        const isSystem = c.created_by === 'System';
+        const isOwn = c.created_by === currentUser;
+        const time = c.created_at ? new Date(c.created_at).toLocaleString() : '';
+
+        if (isSystem) {
+            return `
+                <div style="text-align: center; padding: 6px 0;">
+                    <span style="background: var(--gray-100); color: var(--gray-500); padding: 4px 12px; border-radius: 12px; font-size: 12px; font-style: italic;">
+                        <i class="fas fa-info-circle" style="margin-right: 4px;"></i>${escapeHtmlTickets(c.comment)}
+                        <span style="margin-left: 6px; font-size: 11px;">${escapeHtmlTickets(time)}</span>
+                    </span>
+                </div>
+            `;
+        }
+
+        return `
+            <div style="display: flex; flex-direction: column; ${isOwn ? 'align-items: flex-end;' : 'align-items: flex-start;'} margin-bottom: 10px;">
+                <div style="max-width: 85%; background: ${isOwn ? '#e3f2fd' : 'var(--gray-50)'}; border-radius: 10px; padding: 10px 14px; border: 1px solid ${isOwn ? '#bbdefb' : 'var(--gray-200)'};">
+                    <div style="font-weight: 600; font-size: 12px; color: ${isOwn ? '#1976d2' : 'var(--gray-700)'}; margin-bottom: 4px;">
+                        ${escapeHtmlTickets(c.created_by)}
+                    </div>
+                    <div style="font-size: 14px; color: var(--gray-800); white-space: pre-wrap; word-break: break-word;">${escapeHtmlTickets(c.comment)}</div>
+                    <div style="font-size: 11px; color: var(--gray-400); margin-top: 4px; text-align: right;">${escapeHtmlTickets(time)}</div>
+                </div>
+            </div>
+        `;
+    }).join('');
+}
+
+// View ticket detail with comments
+async function viewTicketDetail(ticketId) {
     const tickets = window._allTickets || [];
     const ticket = tickets.find(t => t.id === ticketId);
     if (!ticket) return;
@@ -288,17 +384,20 @@ function viewTicketDetail(ticketId) {
     const createdDate = ticket.created_at ? new Date(ticket.created_at).toLocaleString() : '-';
     const updatedDate = ticket.updated_at ? new Date(ticket.updated_at).toLocaleString() : '-';
 
+    const comments = await fetchTicketComments(ticketId);
+    const commentsHTML = renderCommentsHTML(comments);
+
     const modalHTML = `
         <div class="modal-overlay" onclick="closeModal()">
-            <div class="modal-content" onclick="event.stopPropagation()" style="max-width: 560px;">
+            <div class="modal-content" onclick="event.stopPropagation()" style="max-width: 620px;">
                 <div class="modal-header">
                     <h3><i class="fas fa-ticket-alt" style="margin-right: 8px;"></i>${escapeHtmlTickets(ticket.ticket_number)}</h3>
                     <button class="modal-close" onclick="closeModal()">×</button>
                 </div>
-                <div class="modal-body">
+                <div class="modal-body" style="padding-bottom: 0;">
                     <h4 style="margin-bottom: 12px;">${escapeHtmlTickets(ticket.title)}</h4>
                     ${ticket.description ? `<p style="color: var(--gray-600); margin-bottom: 16px; white-space: pre-wrap;">${escapeHtmlTickets(ticket.description)}</p>` : ''}
-                    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px;">
+                    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-bottom: 16px;">
                         <div>
                             <small style="color: var(--gray-500);">Status</small>
                             <div><span style="background: ${statusCfg.bg}; color: ${statusCfg.color}; padding: 4px 10px; border-radius: 4px; font-weight: 600; font-size: 13px;"><i class="fas ${statusCfg.icon}" style="margin-right: 4px;"></i>${escapeHtmlTickets(statusCfg.label)}</span></div>
@@ -323,16 +422,28 @@ function viewTicketDetail(ticketId) {
                             <small style="color: var(--gray-500);">Created</small>
                             <div style="font-weight: 600;">${escapeHtmlTickets(createdDate)}</div>
                         </div>
-                        <div style="grid-column: span 2;">
-                            <small style="color: var(--gray-500);">Last Updated</small>
-                            <div style="font-weight: 600;">${escapeHtmlTickets(updatedDate)}</div>
+                    </div>
+
+                    <!-- Comments Section -->
+                    <div style="border-top: 1px solid var(--gray-200); padding-top: 14px;">
+                        <h4 style="margin-bottom: 10px; font-size: 15px;"><i class="fas fa-comments" style="margin-right: 6px; color: var(--gray-500);"></i>Comments</h4>
+                        <div id="ticket-comments-list" style="max-height: 250px; overflow-y: auto; margin-bottom: 12px; padding: 4px;">
+                            ${commentsHTML}
+                        </div>
+                        <div style="display: flex; gap: 8px; padding-bottom: 4px;">
+                            <textarea id="ticket-comment-input" placeholder="Write a comment..." rows="2" maxlength="2000"
+                                style="flex: 1; padding: 8px 12px; border: 1px solid var(--gray-300); border-radius: 6px; resize: none; font-size: 14px;"
+                                onkeydown="if(event.key==='Enter'&&!event.shiftKey){event.preventDefault();addTicketComment('${escapeHtmlTickets(ticket.id)}');}"></textarea>
+                            <button class="btn btn-primary" onclick="addTicketComment('${escapeHtmlTickets(ticket.id)}')" style="align-self: flex-end; height: 38px;">
+                                <i class="fas fa-paper-plane"></i>
+                            </button>
                         </div>
                     </div>
                 </div>
                 <div class="modal-footer" style="display: flex; gap: 10px; justify-content: flex-end; padding: 16px;">
                     <button class="btn btn-secondary" onclick="closeModal()">Close</button>
                     <button class="btn btn-primary" onclick="showUpdateTicketStatusModal('${escapeHtmlTickets(ticket.id)}')">
-                        <i class="fas fa-edit" style="margin-right: 4px;"></i> Update Status
+                        <i class="fas fa-edit" style="margin-right: 4px;"></i> Update
                     </button>
                 </div>
             </div>
@@ -341,6 +452,10 @@ function viewTicketDetail(ticketId) {
 
     closeModal();
     document.getElementById('modals-container').innerHTML = modalHTML;
+
+    // Auto-scroll to bottom of comments
+    const commentsList = document.getElementById('ticket-comments-list');
+    if (commentsList) commentsList.scrollTop = commentsList.scrollHeight;
 }
 
 // Update Status Modal
@@ -437,6 +552,10 @@ async function updateTicket(ticketId) {
         return;
     }
 
+    // Find old ticket to detect changes
+    const oldTicket = (window._allTickets || []).find(t => t.id === ticketId);
+    const currentUser = Auth?.user?.username || Auth?.user?.email || 'Unknown';
+
     const { error } = await supabase
         .from('tickets')
         .update({
@@ -456,6 +575,36 @@ async function updateTicket(ticketId) {
         return;
     }
 
+    // Log system comments for changes
+    const changes = [];
+    if (oldTicket) {
+        if (oldTicket.status !== status) {
+            const oldLabel = TICKET_STATUSES[oldTicket.status]?.label || oldTicket.status;
+            const newLabel = TICKET_STATUSES[status]?.label || status;
+            changes.push(`Status changed from ${oldLabel} to ${newLabel} by ${currentUser}`);
+        }
+        if (oldTicket.priority !== priority) {
+            const oldLabel = TICKET_PRIORITIES[oldTicket.priority]?.label || oldTicket.priority;
+            const newLabel = TICKET_PRIORITIES[priority]?.label || priority;
+            changes.push(`Priority changed from ${oldLabel} to ${newLabel} by ${currentUser}`);
+        }
+        if ((oldTicket.assigned_to || '') !== (assignedTo || '')) {
+            const oldAssign = oldTicket.assigned_to || 'Unassigned';
+            const newAssign = assignedTo || 'Unassigned';
+            changes.push(`Assigned to changed from ${oldAssign} to ${newAssign} by ${currentUser}`);
+        }
+    }
+
+    // Insert system comments for each change
+    if (changes.length > 0) {
+        const systemComments = changes.map(c => ({
+            ticket_id: ticketId,
+            comment: c,
+            created_by: 'System'
+        }));
+        await supabase.from('ticket_comments').insert(systemComments);
+    }
+
     const statusLabel = TICKET_STATUSES[status]?.label || status;
     showNotification(`Ticket updated — Status: ${statusLabel}`, 'success');
     closeModal();
@@ -470,3 +619,4 @@ window.viewTicketDetail = viewTicketDetail;
 window.showUpdateTicketStatusModal = showUpdateTicketStatusModal;
 window.updateTicket = updateTicket;
 window.filterTickets = filterTickets;
+window.addTicketComment = addTicketComment;
