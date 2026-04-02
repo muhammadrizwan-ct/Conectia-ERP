@@ -232,7 +232,7 @@ async function showCreateTicketModal() {
     `;
 
     closeModal();
-    document.body.insertAdjacentHTML('beforeend', modalHTML);
+    document.getElementById('modals-container').innerHTML = modalHTML;
 }
 
 // Create ticket
@@ -340,7 +340,7 @@ function viewTicketDetail(ticketId) {
     `;
 
     closeModal();
-    document.body.insertAdjacentHTML('beforeend', modalHTML);
+    document.getElementById('modals-container').innerHTML = modalHTML;
 }
 
 // Update Status Modal
@@ -420,7 +420,7 @@ async function showUpdateTicketStatusModal(ticketId) {
     `;
 
     closeModal();
-    document.body.insertAdjacentHTML('beforeend', modalHTML);
+    document.getElementById('modals-container').innerHTML = modalHTML;
 }
 
 // Update ticket
@@ -460,12 +460,6 @@ async function updateTicket(ticketId) {
     showNotification(`Ticket updated — Status: ${statusLabel}`, 'success');
     closeModal();
     loadTickets();
-}
-
-// Close modal helper
-function closeModal() {
-    const overlay = document.querySelector('.modal-overlay');
-    if (overlay) overlay.remove();
 }
 
 // Expose globally
