@@ -74,6 +74,9 @@ async function loadTickets() {
     const container = document.getElementById('content-body');
     if (!container) return;
 
+    // Mark tickets as seen to clear badge
+    markTicketsSeen();
+
     // Clear header actions from previous page
     const headerActions = document.getElementById('header-actions');
     if (headerActions) {
@@ -617,6 +620,55 @@ async function updateTicket(ticketId) {
     loadTickets();
 }
 
+// --- Ticket Badge Notification ---
+const TICKETS_LAST_SEEN_KEY = 'vts_tickets_last_seen';
+
+function getTicketsLastSeen() {
+    return localStorage.getItem(TICKETS_LAST_SEEN_KEY) || '1970-01-01T00:00:00Z';
+}
+
+function markTicketsSeen() {
+    localStorage.setItem(TICKETS_LAST_SEEN_KEY, new Date().toISOString());
+    updateTicketsBadge(0);
+}
+
+function updateTicketsBadge(count) {
+    const badge = document.getElementById('tickets-badge');
+    if (!badge) return;
+    if (count > 0) {
+        badge.textContent = count > 99 ? '99+' : String(count);
+        badge.style.display = '';
+    } else {
+        badge.style.display = 'none';
+    }
+}
+
+async function checkTicketUpdates() {
+    try {
+        const lastSeen = getTicketsLastSeen();
+        const { count, error } = await supabase
+            .from('tickets')
+            .select('id', { count: 'exact', head: true })
+            .gt('updated_at', lastSeen);
+
+        if (!error && typeof count === 'number') {
+            updateTicketsBadge(count);
+        }
+    } catch (e) {
+        // silently ignore
+    }
+}
+
+// Check for ticket updates every 30 seconds
+setInterval(() => {
+    if (Auth?.isLoggedIn?.()) checkTicketUpdates();
+}, 30000);
+
+// Initial check after page load
+setTimeout(() => {
+    if (Auth?.isLoggedIn?.()) checkTicketUpdates();
+}, 2000);
+
 // Expose globally
 window.loadTickets = loadTickets;
 window.showCreateTicketModal = showCreateTicketModal;
@@ -626,3 +678,4 @@ window.showUpdateTicketStatusModal = showUpdateTicketStatusModal;
 window.updateTicket = updateTicket;
 window.filterTickets = filterTickets;
 window.addTicketComment = addTicketComment;
+window.checkTicketUpdates = checkTicketUpdates;

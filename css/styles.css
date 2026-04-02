@@ -461,6 +461,26 @@ body {
     color: white;
 }
 
+.sidebar-badge {
+    background: #d32f2f;
+    color: white;
+    font-size: 10px;
+    font-weight: 700;
+    min-width: 18px;
+    height: 18px;
+    line-height: 18px;
+    text-align: center;
+    border-radius: 9px;
+    padding: 0 5px;
+    margin-left: auto;
+    animation: badge-pulse 2s ease-in-out infinite;
+}
+
+@keyframes badge-pulse {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.6; }
+}
+
 .nav-submenu {
     display: none;
     padding-left: 14px;

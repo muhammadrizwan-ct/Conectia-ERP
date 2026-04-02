@@ -886,6 +886,7 @@ function renderSidebar() {
                 <div class="nav-item" data-page="${item.page}" onclick="navigateToPage('${item.page}')">
                     <i class="fas ${item.icon}"></i>
                     <span>${item.text}</span>
+                    ${item.page === 'tickets' ? '<span id="tickets-badge" class="sidebar-badge" style="display:none;"></span>' : ''}
                 </div>
             `;
         }
