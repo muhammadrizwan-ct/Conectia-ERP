@@ -76,7 +76,13 @@ async function loadTickets() {
 
     // Clear header actions from previous page
     const headerActions = document.getElementById('header-actions');
-    if (headerActions) headerActions.innerHTML = '';
+    if (headerActions) {
+        headerActions.innerHTML = `
+            <button class="btn btn-primary" onclick="showCreateTicketModal()">
+                <i class="fas fa-plus"></i> New Ticket
+            </button>
+        `;
+    }
 
     container.innerHTML = `
         <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px; flex-wrap: wrap; gap: 10px;">
@@ -96,9 +102,6 @@ async function loadTickets() {
                     <option value="urgent">Urgent</option>
                 </select>
             </div>
-            <button class="btn btn-primary" onclick="showCreateTicketModal()">
-                <i class="fas fa-plus"></i> New Ticket
-            </button>
         </div>
         <div id="tickets-table-container">
             <p style="text-align: center; padding: 40px; color: var(--gray-500);">Loading tickets...</p>
