@@ -930,15 +930,6 @@ setTimeout(() => {
     if (Auth?.isLoggedIn?.()) checkTicketUpdates();
 }, 2000);
 
-// Auto-refresh tickets page every 5 seconds if on Tickets tab
-setInterval(() => {
-    const activeNav = document.querySelector('.nav-item.active');
-    const isOnTicketsPage = activeNav && activeNav.textContent.includes('Tickets');
-    if (isOnTicketsPage && typeof loadTickets === 'function') {
-        loadTickets();
-    }
-}, 5000);
-
 // --- Smooth Ticket Table Update ---
 async function smoothUpdateTicketsTable() {
     const latestTickets = await fetchTickets();
