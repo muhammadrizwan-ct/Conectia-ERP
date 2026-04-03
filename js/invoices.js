@@ -1,3 +1,21 @@
+// --- Activity Logging Utility ---
+async function logActivity({ userId, action, entityType, entityId, details = {} }) {
+    if (!supabase || !userId || !action || !entityType || !entityId) return;
+    try {
+        await supabase.from('activity_logs').insert([
+            {
+                user_id: userId,
+                action,
+                entity_type: entityType,
+                entity_id: entityId,
+                details,
+                created_at: new Date().toISOString()
+            }
+        ]);
+    } catch (err) {
+        console.warn('Failed to log activity:', err);
+    }
+}
 // --- Supabase Integration ---
 var supabase = window.supabaseClient;
 const DELETED_INVOICE_STORAGE_KEY = 'vts_deleted_invoices';
@@ -363,6 +381,8 @@ async function updateInvoiceSupabaseByNumber(invoiceNo, payload) {
     const attemptPayload = { ...payload };
     let attempts = 0;
 
+    // Get userId for activity log
+    const userId = (window.Auth && window.Auth.user && window.Auth.user.id) ? window.Auth.user.id : null;
     while (attempts < 16 && Object.keys(attemptPayload).length > 0) {
         const { error } = await supabase
             .from('invoices')
@@ -370,6 +390,16 @@ async function updateInvoiceSupabaseByNumber(invoiceNo, payload) {
             .eq('invoice_no', normalizedInvoiceNo);
 
         if (!error) {
+            // Log activity for invoice update
+            if (userId) {
+                logActivity({
+                    userId,
+                    action: 'update',
+                    entityType: 'invoice',
+                    entityId: normalizedInvoiceNo,
+                    details: { payload: attemptPayload }
+                });
+            }
             return;
         }
 
@@ -517,6 +547,9 @@ async function saveInvoiceToSupabase(invoice) {
 
     let lastError = null;
 
+    // Get userId for activity log
+    const userId = (window.Auth && window.Auth.user && window.Auth.user.id) ? window.Auth.user.id : null;
+
     for (const rawPayload of candidatePayloads) {
         const payload = Object.fromEntries(
             Object.entries(rawPayload).filter(([key, value]) => {
@@ -546,6 +579,16 @@ async function saveInvoiceToSupabase(invoice) {
 
             if (!error) {
                 window.lastInvoiceSaveError = null;
+                // Log activity for invoice creation
+                if (userId) {
+                    logActivity({
+                        userId,
+                        action: 'create',
+                        entityType: 'invoice',
+                        entityId: String(data?.invoice_no || data?.id || safeInvoice.invoiceNo),
+                        details: { invoice: data }
+                    });
+                }
                 return data ? normalizeInvoiceRecord(data) : null;
             }
 
@@ -906,6 +949,8 @@ async function deleteInvoiceFromSupabase(invoice = {}) {
         return { success: false, message: 'Missing invoice identifier for delete' };
     }
 
+    // Get userId for activity log
+    const userId = (window.Auth && window.Auth.user && window.Auth.user.id) ? window.Auth.user.id : null;
     if (invoiceNo) {
         const { error } = await supabase
             .from('invoices')
@@ -913,6 +958,16 @@ async function deleteInvoiceFromSupabase(invoice = {}) {
             .eq('invoice_no', invoiceNo);
 
         if (!error) {
+            // Log activity for invoice delete
+            if (userId) {
+                logActivity({
+                    userId,
+                    action: 'delete',
+                    entityType: 'invoice',
+                    entityId: invoiceNo,
+                    details: { invoice }
+                });
+            }
             return { success: true };
         }
 
@@ -933,6 +988,16 @@ async function deleteInvoiceFromSupabase(invoice = {}) {
 
             if (typeof updateInvoiceSupabaseByNumber === 'function') {
                 await updateInvoiceSupabaseByNumber(invoiceNo, softDeletePayload);
+                // Log activity for invoice soft delete
+                if (userId) {
+                    logActivity({
+                        userId,
+                        action: 'soft-delete',
+                        entityType: 'invoice',
+                        entityId: invoiceNo,
+                        details: { invoice, softDeletePayload }
+                    });
+                }
                 return { success: true, softDeleted: true };
             }
 
