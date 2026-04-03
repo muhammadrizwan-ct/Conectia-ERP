@@ -289,7 +289,6 @@ function renderTicketsTable(tickets) {
         // Determine latest activity (ticket update or latest comment)
         let latestActivity = ticket.updated_at;
         if (ticket.comments && ticket.comments.length > 0) {
-            // Find the latest comment date
             const lastComment = ticket.comments.reduce((latest, c) => {
                 if (!latest) return c;
                 return new Date(c.created_at) > new Date(latest.created_at) ? c : latest;
@@ -298,7 +297,6 @@ function renderTicketsTable(tickets) {
                 latestActivity = lastComment.created_at;
             }
         }
-        // Compare with last viewed
         const lastViewed = getTicketLastViewed(ticket.id);
         const hasNew = new Date(latestActivity) > new Date(lastViewed);
 
@@ -961,7 +959,8 @@ async function smoothUpdateTicketsTable() {
     latestTickets.forEach(t => { ticketMap[t.id] = t; });
     // Update or add rows
     Array.from(tbody.rows).forEach(row => {
-        const ticketId = row.querySelector('button[onclick^="viewTicketDetail("]')?.getAttribute('onclick')?.match(/viewTicketDetail\('([^']+)'\)/)?.[1];
+        const viewBtn = row.querySelector('button[onclick^="viewTicketDetail("]');
+        const ticketId = viewBtn?.getAttribute('onclick')?.match(/viewTicketDetail\('([^']+)'\)/)?.[1];
         if (!ticketId || !ticketMap[ticketId]) return;
         const ticket = ticketMap[ticketId];
         // Determine latest activity (ticket update or latest comment)
@@ -977,14 +976,30 @@ async function smoothUpdateTicketsTable() {
         }
         const lastViewed = getTicketLastViewed(ticket.id);
         const hasNew = new Date(latestActivity) > new Date(lastViewed);
-        // Update red dot in title cell
+        // Update only the red dot span
         const titleCell = row.cells[1];
         if (titleCell) {
+            // Find or create the red dot span
+            let dotSpan = titleCell.querySelector('.ticket-red-dot');
+            if (hasNew && !dotSpan) {
+                dotSpan = document.createElement('span');
+                dotSpan.className = 'ticket-red-dot';
+                dotSpan.title = 'New activity';
+                dotSpan.style.cssText = 'color: #d32f2f; margin-left: 6px; transition: opacity 0.3s;';
+                dotSpan.innerHTML = '<i class="fas fa-circle" style="font-size: 10px;"></i>';
+                titleCell.appendChild(dotSpan);
+            } else if (!hasNew && dotSpan) {
+                dotSpan.style.opacity = '0';
+                setTimeout(() => { if (dotSpan && dotSpan.parentNode) dotSpan.remove(); }, 300);
+            }
+            // Always update the title text (but not the whole cell)
             const baseTitle = escapeHtmlTickets(ticket.title);
-            const dotHtml = hasNew ? ' <span title="New activity" style="color: #d32f2f; margin-left: 6px;"><i class="fas fa-circle" style="font-size: 10px;"></i></span>' : '';
-            titleCell.innerHTML = baseTitle + dotHtml;
+            if (titleCell.childNodes[0].nodeType === Node.TEXT_NODE) {
+                titleCell.childNodes[0].textContent = baseTitle;
+            } else {
+                titleCell.insertBefore(document.createTextNode(baseTitle), titleCell.firstChild);
+            }
         }
-        // Optionally update other cells if needed (priority, status, etc.)
     });
     // If ticket count changed, re-render
     if (tbody.rows.length !== latestTickets.length) {
@@ -992,12 +1007,12 @@ async function smoothUpdateTicketsTable() {
     }
 }
 
-// Replace auto-refresh interval to use smooth update
+// Replace smooth update interval to use granular update
 if (window._smoothTicketsInterval) clearInterval(window._smoothTicketsInterval);
 window._smoothTicketsInterval = setInterval(() => {
     const activeNav = document.querySelector('.nav-item.active');
     const isOnTicketsPage = activeNav && activeNav.textContent.includes('Tickets');
-    if (isOnTicketsPage) smoothUpdateTicketsTable();
+    if (isOnTicketsPage) granularUpdateTicketsTable();
 }, 5000);
 
 // Expose globally
