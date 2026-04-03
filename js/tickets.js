@@ -998,6 +998,13 @@ async function smoothUpdateTicketsTable() {
     }
 }
 
+// --- Fallback: If ultraGranularUpdateTicketsTable is not defined, use smoothUpdateTicketsTable ---
+function ultraGranularUpdateTicketsTable() {
+    if (typeof smoothUpdateTicketsTable === 'function') {
+        smoothUpdateTicketsTable();
+    }
+}
+
 // Replace smooth update interval to use granular update
 if (window._smoothTicketsInterval) clearInterval(window._smoothTicketsInterval);
 window._smoothTicketsInterval = setInterval(() => {
