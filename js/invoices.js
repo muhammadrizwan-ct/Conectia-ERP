@@ -2739,6 +2739,8 @@ function generateProfessionalInvoiceHTML(invoice) {
                 <tfoot>
                     <tr>
                         <td style="text-align: center; font-weight: 700;">-</td>
+                        <td></td>
+                        <td></td>
                         <td style="text-align: right; font-weight: 700;">Subtotal:</td>
                         <td style="text-align: right; font-weight: 700;">${formatPKRForInvoice(subtotal)}</td>
                         <td style="text-align: right; font-weight: 700;">${formatPKRForInvoice(taxAmount)}</td>
