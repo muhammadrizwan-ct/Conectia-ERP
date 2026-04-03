@@ -941,6 +941,65 @@ setInterval(() => {
     }
 }, 5000);
 
+// --- Smooth Ticket Table Update ---
+async function smoothUpdateTicketsTable() {
+    const latestTickets = await fetchTickets();
+    if (!Array.isArray(latestTickets)) return;
+    // Compare with current DOM rows
+    const table = document.querySelector('#tickets-table-container table.data-table');
+    if (!table) {
+        renderTicketsTable(latestTickets);
+        return;
+    }
+    const tbody = table.querySelector('tbody');
+    if (!tbody) {
+        renderTicketsTable(latestTickets);
+        return;
+    }
+    // Build a map of ticketId to ticket for quick lookup
+    const ticketMap = {};
+    latestTickets.forEach(t => { ticketMap[t.id] = t; });
+    // Update or add rows
+    Array.from(tbody.rows).forEach(row => {
+        const ticketId = row.querySelector('button[onclick^="viewTicketDetail("]')?.getAttribute('onclick')?.match(/viewTicketDetail\('([^']+)'\)/)?.[1];
+        if (!ticketId || !ticketMap[ticketId]) return;
+        const ticket = ticketMap[ticketId];
+        // Determine latest activity (ticket update or latest comment)
+        let latestActivity = ticket.updated_at;
+        if (ticket.comments && ticket.comments.length > 0) {
+            const lastComment = ticket.comments.reduce((latest, c) => {
+                if (!latest) return c;
+                return new Date(c.created_at) > new Date(latest.created_at) ? c : latest;
+            }, null);
+            if (lastComment && new Date(lastComment.created_at) > new Date(latestActivity)) {
+                latestActivity = lastComment.created_at;
+            }
+        }
+        const lastViewed = getTicketLastViewed(ticket.id);
+        const hasNew = new Date(latestActivity) > new Date(lastViewed);
+        // Update red dot in title cell
+        const titleCell = row.cells[1];
+        if (titleCell) {
+            const baseTitle = escapeHtmlTickets(ticket.title);
+            const dotHtml = hasNew ? ' <span title="New activity" style="color: #d32f2f; margin-left: 6px;"><i class="fas fa-circle" style="font-size: 10px;"></i></span>' : '';
+            titleCell.innerHTML = baseTitle + dotHtml;
+        }
+        // Optionally update other cells if needed (priority, status, etc.)
+    });
+    // If ticket count changed, re-render
+    if (tbody.rows.length !== latestTickets.length) {
+        renderTicketsTable(latestTickets);
+    }
+}
+
+// Replace auto-refresh interval to use smooth update
+if (window._smoothTicketsInterval) clearInterval(window._smoothTicketsInterval);
+window._smoothTicketsInterval = setInterval(() => {
+    const activeNav = document.querySelector('.nav-item.active');
+    const isOnTicketsPage = activeNav && activeNav.textContent.includes('Tickets');
+    if (isOnTicketsPage) smoothUpdateTicketsTable();
+}, 5000);
+
 // Expose globally
 window.loadTickets = loadTickets;
 window.showCreateTicketModal = showCreateTicketModal;
