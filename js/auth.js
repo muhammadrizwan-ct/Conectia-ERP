@@ -855,9 +855,18 @@ function renderSidebar() {
         { icon: 'fa-user-gear', text: 'Users', page: 'users', permission: 'canManageUsers' }
     ];
     
-    // Add admin items
+    // Add admin items with submenu for Audit Log
     if (permissions && (permissions.canManageUsers || permissions.canViewAudit || permissions.canConfigure)) {
-        navItems.push({ icon: 'fa-cog', text: 'Admin', page: 'admin', permission: 'canConfigure' });
+        navItems.push({
+            icon: 'fa-cog',
+            text: 'Admin',
+            page: 'admin',
+            permission: 'canConfigure',
+            children: [
+                { icon: 'fa-user-gear', text: 'Admin Settings', page: 'admin' },
+                { icon: 'fa-clipboard-list', text: 'Audit Log', page: 'audit-log' }
+            ]
+        });
     }
     
     let html = '';
@@ -1048,7 +1057,8 @@ async function loadPage(page, options = {}) {
         'ledger-bank': 'canViewLedger',
         'reports': 'canViewReportsSection',
         'users': 'canManageUsers',
-        'admin': 'canConfigure'
+        'admin': 'canConfigure',
+        'audit-log': 'canConfigure'
     };
 
     const requiredPermission = pagePermissionMap[normalizedPage];
@@ -1127,6 +1137,9 @@ async function loadPage(page, options = {}) {
                 break;
             case 'admin':
                 await invokeLoader('loadAdmin');
+                break;
+            case 'audit-log':
+                await invokeLoader('loadAuditLog');
                 break;
             default:
                 await invokeLoader('loadDashboard');

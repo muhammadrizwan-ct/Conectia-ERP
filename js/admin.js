@@ -1,3 +1,49 @@
+// --- Audit Log Loader ---
+async function loadAuditLog() {
+    document.getElementById('header-actions').innerHTML = '';
+    const contentEl = document.getElementById('content-body');
+    contentEl.innerHTML = `
+        <div style="margin-bottom: 24px;">
+            <h3>Audit Log</h3>
+            <p style="color: var(--gray-600); font-size: 14px;">All user/admin actions for traceability.</p>
+        </div>
+        <div class="card">
+            <div class="card-header">
+                <h3>Activity Logs</h3>
+            </div>
+            <div class="card-body">
+                <div id="audit-log-table-container"></div>
+            </div>
+        </div>
+    `;
+    const logs = await fetchAuditLogsFromSupabase();
+    displayAuditLogTable(logs);
+}
+
+function displayAuditLogTable(logs) {
+    const container = document.getElementById('audit-log-table-container');
+    if (!logs || logs.length === 0) {
+        container.innerHTML = '<p style="text-align: center; color: var(--gray-500);">No audit logs available</p>';
+        return;
+    }
+    let html = '<div class="table-responsive"><table class="data-table">';
+    html += '<thead><tr>';
+    html += '<th>Timestamp</th>';
+    html += '<th>User</th>';
+    html += '<th>Action</th>';
+    html += '<th>Details</th>';
+    html += '</tr></thead><tbody>';
+    logs.forEach(log => {
+        html += '<tr>';
+        html += `<td>${log.timestamp ? new Date(log.timestamp).toLocaleString() : 'N/A'}</td>`;
+        html += `<td>${log.performedBy || 'System'}</td>`;
+        html += `<td>${log.action || ''}</td>`;
+        html += `<td>${log.details || ''}</td>`;
+        html += '</tr>';
+    });
+    html += '</tbody></table></div>';
+    container.innerHTML = html;
+}
 // --- Supabase Integration ---
 var supabase = window.supabaseClient;
 
