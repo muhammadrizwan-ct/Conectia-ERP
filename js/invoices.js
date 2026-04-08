@@ -1868,7 +1868,6 @@ function updateVendorInvoice(event, originalInvoiceNo) {
 
     vendorInvoicesData = loadVendorInvoicesFromStorage() || [];
 
-    // Check duplicate only if invoice number changed
     if (invoiceNo !== originalInvoiceNo && vendorInvoicesData.some(i => i.invoiceNo === invoiceNo)) {
         alert('Invoice number already exists');
         return;
@@ -1896,7 +1895,6 @@ function updateVendorInvoice(event, originalInvoiceNo) {
     displayVendorInvoicesTable(vendorInvoicesData);
     showNotification('Vendor invoice updated successfully!', 'success');
 
-    // If invoice no changed, delete old Supabase record and insert updated one
     const updated = vendorInvoicesData.find(i => i.invoiceNo === invoiceNo);
     if (invoiceNo !== originalInvoiceNo) {
         deleteVendorInvoiceFromSupabase(originalInvoiceNo).catch(() => {});
@@ -2793,9 +2791,10 @@ function generateProfessionalInvoiceHTML(invoice) {
                         <th width="5%" style="text-align: center;">#</th>
                         <th width="40%">Vehicle / Service Description</th>
                         ${invoice.invoiceType === 'category-details' ? '' : '<th width="10%" style="text-align: center;">Quantity</th>'}
-                        <th width="15%" style="text-align: right;">Unit Price</th>
-                        <th width="15%" style="text-align: right;">Sales Tax (19.5%)</th>
-                        <th width="15%" style="text-align: right;">Amount</th>
+                        <th width="12%" style="text-align: right;">Unit Price</th>
+                        <th width="12%" style="text-align: right;">Subtotal</th>
+                        <th width="12%" style="text-align: right;">Sales Tax (19.5%)</th>
+                        <th width="12%" style="text-align: right;">Amount</th>
                     </tr>
                 </thead>
                 <tbody>
@@ -2805,10 +2804,11 @@ function generateProfessionalInvoiceHTML(invoice) {
                     <tr>
                         <td style="text-align: center; font-weight: 700;">-</td>
                         <td style="font-weight: 700; text-align: right;">Subtotal:</td>
-                        ${invoice.invoiceType === 'category-details' ? '' : `<td style="text-align: center; font-weight: 700;">${invoice.items && invoice.items.length ? invoice.items.reduce((sum, item) => sum + (item.quantity || 1), 0) : '-'}</td>`}
-                        <td style="text-align: right; font-weight: 700;">${invoice.items && invoice.items.length ? formatPKRForInvoice(invoice.items.reduce((sum, item) => sum + ((item.unitPrice || item.monthlyRate || 0) * (item.quantity || 1)), 0)) : '-'}</td>
-                        <td style="text-align: right; font-weight: 700;">${invoice.items && invoice.items.length ? formatPKRForInvoice(invoice.items.reduce((sum, item) => sum + (item.customTaxAmount != null ? item.customTaxAmount : ((item.unitPrice || item.monthlyRate || 0) * (item.quantity || 1) * CONFIG.TAX_RATE)), 0)) : formatPKRForInvoice(taxAmount)}</td>
-                        <td style="text-align: right; font-weight: 700;">${formatPKRForInvoice(subtotal + taxAmount)}</td>
+                        ${invoice.invoiceType === 'category-details' ? '' : `<td style="text-align: center; font-weight: 700;">${invoice.items && invoice.items.length ? invoice.items.filter(item => item.isCustomItem).reduce((sum, item) => sum + (item.quantity || 1), 0) : '-'}</td>`}
+                        <td style="text-align: right; font-weight: 700;">${invoice.items && invoice.items.length ? formatPKRForInvoice(invoice.items.filter(item => item.isCustomItem).reduce((sum, item) => sum + (item.unitPrice || item.monthlyRate || 0), 0)) : '-'}</td>
+                        <td style="text-align: right; font-weight: 700;">${invoice.items && invoice.items.length ? formatPKRForInvoice(invoice.items.filter(item => item.isCustomItem).reduce((sum, item) => sum + ((item.unitPrice || item.monthlyRate || 0) * (item.quantity || 1)), 0)) : '-'}</td>
+                        <td style="text-align: right; font-weight: 700;">${invoice.items && invoice.items.length ? formatPKRForInvoice(invoice.items.filter(item => item.isCustomItem).reduce((sum, item) => sum + (item.customTaxAmount != null ? item.customTaxAmount : (((item.unitPrice || item.monthlyRate || 0) * (item.quantity || 1)) * CONFIG.TAX_RATE)), 0)) : formatPKRForInvoice(taxAmount)}</td>
+                        <td style="text-align: right; font-weight: 700;">${invoice.items && invoice.items.length ? formatPKRForInvoice(invoice.items.filter(item => item.isCustomItem).reduce((sum, item) => sum + ((item.unitPrice || item.monthlyRate || 0) * (item.quantity || 1) + (item.customTaxAmount != null ? item.customTaxAmount : (((item.unitPrice || item.monthlyRate || 0) * (item.quantity || 1)) * CONFIG.TAX_RATE))), 0)) : formatPKRForInvoice(subtotal + taxAmount)}</td>
                     </tr>
                 </tfoot>
             </table>
@@ -2941,8 +2941,9 @@ function generateInvoiceItemsRows(invoice) {
             customItems.forEach(item => {
                 const qty = item.quantity || 1;
                 const itemUnitPrice = (item.unitPrice || item.monthlyRate) || 0;
-                const itemTax = item.customTaxAmount != null ? item.customTaxAmount : (itemUnitPrice * qty * CONFIG.TAX_RATE);
-                const itemAmount = (itemUnitPrice * qty) + itemTax;
+                const itemSubtotal = itemUnitPrice * qty;
+                const itemTax = item.customTaxAmount != null ? item.customTaxAmount : (itemSubtotal * CONFIG.TAX_RATE);
+                const itemAmount = itemSubtotal + itemTax;
                 rows += `<tr>`;
                 rows += `<td style="text-align: center; font-weight: 600;">${srNo++}</td>`;
                 rows += `<td>
@@ -2951,6 +2952,7 @@ function generateInvoiceItemsRows(invoice) {
                          </td>`;
                 rows += `<td style="text-align: center;">${qty}</td>`;
                 rows += `<td style="text-align: right;">${formatPKR(itemUnitPrice)}</td>`;
+                rows += `<td style="text-align: right;">${formatPKR(itemSubtotal)}</td>`;
                 rows += `<td style="text-align: right;">${formatPKR(itemTax)}</td>`;
                 rows += `<td style="text-align: right; font-weight: 600;">${formatPKR(itemAmount)}</td>`;
                 rows += `</tr>`;
@@ -3459,7 +3461,7 @@ async function showGenerateInvoiceModal() {
                 const vehicleSubtotal = selectedVehicles.reduce((sum, v) => sum + v.monthlyRate, 0);
                 const vehicleTax = vehicleSubtotal * CONFIG.TAX_RATE;
                 const customSubtotal = customItems.reduce((sum, v) => sum + v.unitPrice, 0);
-                const customTax = customItems.reduce((sum, v) => sum + (v.customTaxAmount || 0), 0);
+                const customTax = customItems.reduce((sum, v) => sum + (v.customTaxAmount != null ? v.customTaxAmount : ((v.unitPrice || v.monthlyRate || 0) * (v.quantity || 1) * CONFIG.TAX_RATE)), 0);
                 const subtotal = vehicleSubtotal + customSubtotal;
                 const taxAmount = vehicleTax + customTax;
                 const totalAmount = subtotal + taxAmount;
