@@ -3197,15 +3197,6 @@ async function showGenerateInvoiceModal() {
 
         let nextInvoiceNo = getNextInvoiceNumberFromLocal();
         
-        // Set current month as default for Billing Month
-        const now = new Date();
-        const monthNames = [
-            'January BILL', 'February BILL', 'March BILL', 'April BILL', 'May BILL', 'June BILL',
-            'July BILL', 'August BILL', 'September BILL', 'October BILL', 'November BILL', 'December BILL'
-        ];
-        const currentMonth = monthNames[now.getMonth()];
-        const billingMonthOptions = monthNames.map(m => `<option value="${m}"${m === currentMonth ? ' selected' : ''}>${m}</option>`).join('');
-
         const content = `
             <form id="generate-invoice-form" onsubmit="return false;">
                 <!-- Invoice Header with Letterhead Spacing Notice -->
@@ -3257,7 +3248,18 @@ async function showGenerateInvoiceModal() {
                     <div class="form-group">
                         <label>Billing Month *</label>
                         <select id="invoice-month" required style="width: 100%; padding: 12px;">
-                            ${billingMonthOptions}
+                            <option value="January BILL">January BILL</option>
+                            <option value="February BILL" selected>February BILL</option>
+                            <option value="March BILL">March BILL</option>
+                            <option value="April BILL">April BILL</option>
+                            <option value="May BILL">May BILL</option>
+                            <option value="June BILL">June BILL</option>
+                            <option value="July BILL">July BILL</option>
+                            <option value="August BILL">August BILL</option>
+                            <option value="September BILL">September BILL</option>
+                            <option value="October BILL">October BILL</option>
+                            <option value="November BILL">November BILL</option>
+                            <option value="December BILL">December BILL</option>
                         </select>
                     </div>
                     
@@ -3290,135 +3292,82 @@ async function showGenerateInvoiceModal() {
                     </div>
                     
                     <div class="form-group">
-                        contentEl.innerHTML = `
-                            <div class="card">
-                                <div class="card-header">
-                                    <div style="display: flex; gap: 16px; align-items: center; flex-wrap: wrap;">
-                                        <div style="position: relative;">
-                                            <i class="fas fa-search" style="position: absolute; left: 12px; top: 50%; transform: translateY(-50%); color: var(--gray-400);"></i>
-                                            <input 
-                                                type="text" 
-                                                id="invoice-search" 
-                                                placeholder="Search invoices..." 
-                                                style="padding: 10px 16px 10px 40px; border: 2px solid var(--gray-200); border-radius: var(--radius); width: 250px;"
-                                                onkeyup="filterInvoices()"
-                                            >
-                                        </div>
+                        <label>Tax Rate (%)</label>
+                        <input type="number" id="tax-rate" value="${CONFIG.TAX_RATE * 100}" step="0.1" readonly style="background: var(--gray-100);">
+                    </div>
+                </div>
+                
+                <div id="description-mode-wrapper" class="form-group" style="margin-top: 8px; display: none;">
+                    <label>Description Detail</label>
+                    <select id="description-mode" onchange="updateInvoicePreview()" style="width: 100%; padding: 12px;">
+                        <option value="categories-only">Show fleet names only</option>
+                        <option value="include-vehicles">Show all vehicles in description</option>
+                    </select>
+                    <small style="color: var(--gray-600); font-size: 12px; margin-top: 4px; display: block;">
+                        Applies when using Fleet Details.
+                    </small>
+                </div>
 
-                                        <select id="invoice-status-filter" onchange="filterInvoices()" style="padding: 10px; border: 2px solid var(--gray-200); border-radius: var(--radius);">
-                                            <option value="">All Status</option>
-                                            <option value="Paid">Paid</option>
-                                            <option value="Partial">Partial</option>
-                                            <option value="Pending">Pending</option>
-                                        </select>
+                <!-- Custom Line Items Section -->
+                <div style="margin-top: 16px; border: 1px solid var(--gray-200); border-radius: var(--radius); padding: 16px;">
+                    <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 12px;">
+                        <label style="font-weight: 600; margin: 0;">
+                            <i class="fas fa-plus-circle" style="color: var(--primary); margin-right: 4px;"></i>
+                            Custom Items (Optional)
+                        </label>
+                        <button type="button" class="btn btn-sm btn-primary" onclick="addCustomInvoiceItem()">
+                            <i class="fas fa-plus"></i> Add Item
+                        </button>
+                    </div>
+                    <small style="color: var(--gray-600); font-size: 12px; display: block; margin-bottom: 12px;">
+                        Add additional line items with custom description, unit price and tax. These will appear alongside vehicle items on the invoice.
+                    </small>
+                    <div id="custom-items-list"></div>
+                </div>
+                
+                <div id="invoice-preview" style="margin-top: 20px; padding: 16px; background: var(--gray-100); border-radius: var(--radius); display: none;">
+                    <h4 style="display: flex; align-items: center; gap: 8px; margin-bottom: 12px;">
+                        <i class="fas fa-file-invoice" style="color: var(--primary);"></i>
+                        Invoice Preview
+                    </h4>
+                    <div id="preview-content"></div>
+                </div>
+            </form>
+        `;
+        
+        showModal('Generate Professional Invoice', content, async (modal) => {
+            const selectedClientValue = document.getElementById('invoice-client').value;
+            const selectedClientOption = document.getElementById('invoice-client').selectedOptions?.[0] || null;
+            const invoiceNoInput = String(document.getElementById('invoice-no').value || '').trim();
+            const invoiceNo = invoiceNoInput || nextInvoiceNo;
+            const month = document.getElementById('invoice-month').value;
+            const invoiceDate = document.getElementById('invoice-date').value;
+            const dueDate = document.getElementById('invoice-due-date').value;
+            const invoiceType = document.getElementById('invoice-type').value;
+            const descriptionMode = document.getElementById('description-mode')?.value || 'categories-only';
+            const allowDuplicateMonth = document.getElementById('allow-duplicate-month')?.checked;
+            
+            if (!selectedClientValue) {
+                showNotification('Please select a client', 'error');
+                return false;
+            }
 
-                                        <select id="invoice-month-filter" onchange="filterInvoices()" style="padding: 10px; border: 2px solid var(--gray-200); border-radius: var(--radius);">
-                                            <option value="">All Months</option>
-                                            <option value="January">January</option>
-                                            <option value="February">February</option>
-                                            <option value="March">March</option>
-                                            <option value="April">April</option>
-                                            <option value="May">May</option>
-                                            <option value="June">June</option>
-                                            <option value="July">July</option>
-                                            <option value="August">August</option>
-                                            <option value="September">September</option>
-                                            <option value="October">October</option>
-                                            <option value="November">November</option>
-                                            <option value="December">December</option>
-                                        </select>
-
-                                        <select id="invoice-year-filter" onchange="filterInvoices()" style="padding: 10px; border: 2px solid var(--gray-200); border-radius: var(--radius);">
-                                            ${generateYearOptions()}
-                                        </select>
-
-                                        <button class="btn btn-sm btn-secondary" onclick="clearInvoiceFilters()" title="Clear Filters" aria-label="Clear Filters">
-                                            <i class="fas fa-eraser"></i>
-                                        </button>
-
-                                        <button class="btn btn-sm btn-success btn-export" onclick="exportInvoices()" style="margin-left: auto;" title="Export Excel" aria-label="Export Excel">
-                                            <i class="fas fa-file-excel"></i>
-                                        </button>
-
-                                        <button class="btn btn-sm btn-primary btn-export" onclick="exportInvoicesPDF()" title="Export PDF" aria-label="Export PDF">
-                                            <i class="fas fa-file-pdf"></i>
-                                        </button>
-
-                                    </div>
-                                </div>
-
-                                <div class="card-body">
-                                    <div id="invoices-alert-area"></div>
-                                    <div id="invoices-summary" style="display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; margin-bottom: 20px;">
-                                        <!-- Summary will be loaded here -->
-                                    </div>
-
-                                    <div id="invoices-table" class="table-responsive" style="max-height: calc(60px + 9 * 60px); overflow-y: auto;">
-                                        <div style="text-align: center; padding: 40px;">
-                                            <i class="fas fa-spinner fa-spin" style="font-size: 32px; color: var(--gray-400);"></i>
-                                            <p style="margin-top: 16px; color: var(--gray-500);">Loading invoices...</p>
-                                        </div>
-                                    </div>
-
-                                    <div id="invoices-pagination" style="margin-top: 20px; display: flex; justify-content: center; gap: 8px;"></div>
-                                </div>
-                            </div>
-
-                            <iframe id="pdf-print-frame" style="display: none;"></iframe>
-                        `;
-                        // Show alert if today is 28th and any active client has no invoice for current month
-                        setTimeout(async () => {
-                            const now = new Date();
-                            if (now.getDate() === 28) {
-                                // Get all clients
-                                let clients = Array.isArray(window.allClients) && window.allClients.length > 0 ? window.allClients : loadClientsFromStorage();
-                                if ((!Array.isArray(clients) || clients.length === 0) && typeof fetchClientsFromSupabase === 'function') {
-                                    try {
-                                        clients = await fetchClientsFromSupabase();
-                                    } catch (e) {}
-                                }
-                                // Only active clients
-                                const isClientActive = (client = {}) => {
-                                    const rawStatus = client?.status ?? client?.clientStatus ?? client?.isActive;
-                                    if (typeof rawStatus === 'boolean') return rawStatus;
-                                    const status = String(rawStatus || 'active').trim().toLowerCase();
-                                    return !status || status === 'active';
-                                };
-                                const activeClients = (clients || []).filter(isClientActive);
-                                // Get all invoices for current month
-                                let invoices = Array.isArray(window.invoicesData) && window.invoicesData.length > 0 ? window.invoicesData : loadCachedInvoices();
-                                if ((!Array.isArray(invoices) || invoices.length === 0) && typeof fetchInvoicesFromSupabase === 'function') {
-                                    try {
-                                        invoices = await fetchInvoicesFromSupabase();
-                                    } catch (e) {}
-                                }
-                                const monthNames = [
-                                    'January BILL', 'February BILL', 'March BILL', 'April BILL', 'May BILL', 'June BILL',
-                                    'July BILL', 'August BILL', 'September BILL', 'October BILL', 'November BILL', 'December BILL'
-                                ];
-                                const currentMonth = monthNames[now.getMonth()];
-                                // Find active clients with no invoice for current month
-                                const missingClients = activeClients.filter(client => {
-                                    const clientId = String(client.clientId || client.client_id || client.id || '').trim();
-                                    const clientName = String(client.name || client.clientName || client.companyName || client.businessName || '').trim().toLowerCase();
-                                    return !invoices.some(inv => {
-                                        const invClientId = String(inv.clientId || inv.client_id || inv.id || '').trim();
-                                        const invClientName = String(inv.clientName || '').trim().toLowerCase();
-                                        const invMonth = String(inv.month || '').trim();
-                                        return (clientId && invClientId && clientId === invClientId || clientName && invClientName && clientName === invClientName) && invMonth === currentMonth;
-                                    });
-                                });
-                                if (missingClients.length > 0) {
-                                    const alertArea = document.getElementById('invoices-alert-area');
-                                    if (alertArea) {
-                                        alertArea.innerHTML = `<div style="background: #fff3cd; color: #856404; border: 1px solid #ffeeba; padding: 12px; border-radius: 6px; margin-bottom: 16px; font-size: 15px; display: flex; align-items: center; gap: 10px;">
-                                            <i class='fas fa-exclamation-triangle' style='font-size: 20px;'></i>
-                                            <div><strong>Alert:</strong> ${missingClients.length} active client(s) have no invoice generated for <b>${currentMonth.replace(' BILL','')}</b>. <a href=\"#\" onclick=\"alert('Clients without invoice: \\n${missingClients.map(c => c.name || c.clientName || c.companyName || c.businessName || '').join('\\n')}'); return false;\">View List</a></div>
-                                        </div>`;
-                                    }
-                                }
-                            }
-                        }, 200);
+            const selectedById = selectedClientValue.startsWith('id:');
+            const selectedClientId = selectedById ? selectedClientValue.slice(3) : '';
+            const selectedClientName = selectedById ? '' : selectedClientValue.replace(/^name:/, '');
+            const selectedClientDbId = String(selectedClientOption?.dataset?.clientDbId || '').trim();
+            const selectedClientBusinessId = String(selectedClientOption?.dataset?.clientBusinessId || '').trim();
+            const selectedClientDisplayName = String(selectedClientOption?.dataset?.clientName || '').trim();
+            
+            // Get selected vehicles
+            const selectedVehicles = [];
+            document.querySelectorAll('.vehicle-checkbox:checked').forEach(cb => {
+                selectedVehicles.push({
+                    vehicleId: cb.value,
+                    registrationNo: cb.dataset.reg,
+                    vehicleName: cb.dataset.name,
+                    category: cb.dataset.category || 'Uncategorized',
+                    monthlyRate: parseFloat(cb.dataset.rate),
                     unitPrice: parseFloat(cb.dataset.rate)
                 });
             });
