@@ -330,6 +330,9 @@ async function fetchInvoicesFromSupabase() {
     return (data || []).map((invoice) => normalizeInvoiceRecord(invoice));
 }
 
+// Ensure global exposure for sidebar alert logic
+window.fetchInvoicesFromSupabase = fetchInvoicesFromSupabase;
+
 function buildInvoiceSupabaseUpdatePayload(invoice = {}) {
     const details = invoice?.details && typeof invoice.details === 'object' ? invoice.details : {};
     const detailsItems = Array.isArray(details.items) ? details.items : [];

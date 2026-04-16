@@ -870,6 +870,7 @@ function renderSidebar() {
     }
     
     let html = '';
+
     navItems.forEach(item => {
         if (permissions && permissions[item.permission]) {
             if (item.children && item.children.length > 0) {
@@ -878,6 +879,7 @@ function renderSidebar() {
                         <i class="fas ${item.icon}"></i>
                         <span>${item.text}</span>
                         <i class="fas fa-chevron-down nav-caret" id="${item.page}-caret"></i>
+                        ${item.page === 'invoices' ? '<span id="sidebar-invoice-alert" style="margin-left:6px;"></span>' : ''}
                     </div>
                     <div class="nav-submenu" id="${item.page}-submenu">
                         ${item.children.map(child => `
@@ -896,10 +898,70 @@ function renderSidebar() {
                     <i class="fas ${item.icon}"></i>
                     <span>${item.text}</span>
                     ${item.page === 'tickets' ? '<span id="tickets-badge" class="sidebar-badge" style="display:none;"></span>' : ''}
+                    ${item.page === 'invoices' ? '<span id="sidebar-invoice-alert" style="margin-left:6px;"></span>' : ''}
                 </div>
             `;
         }
     });
+
+    // After rendering, check for missing invoices and show alert if needed
+    setTimeout(async () => {
+        const today = new Date();
+        if (today.getDate() < 28) return;
+        let clients = [];
+        if (window.fetchClientsFromSupabase) {
+            clients = await window.fetchClientsFromSupabase();
+        } else if (typeof fetchClientsFromSupabase === 'function') {
+            clients = await fetchClientsFromSupabase();
+        }
+        const activeClients = (clients || []).filter(c => (c.status || '').toLowerCase() === 'active');
+        let invoices = [];
+        if (window.fetchInvoicesFromSupabase) {
+            invoices = await window.fetchInvoicesFromSupabase();
+        } else if (typeof fetchInvoicesFromSupabase === 'function') {
+            invoices = await fetchInvoicesFromSupabase();
+        }
+        const currentMonth = today.toLocaleString('en-US', { month: 'long' });
+        const currentYear = today.getFullYear();
+        const missingClients = activeClients.filter(client => {
+            const clientId = client.clientId || client.id || client.client_id;
+            return !invoices.some(inv => {
+                const invClientId = inv.clientId || inv.client_id || inv.id;
+                const invMonth = (inv.month || '').toLowerCase();
+                const invYear = (inv.invoiceDate || inv.createdDate || inv.created_at || '').toString().includes(currentYear);
+                return invClientId == clientId && invMonth.includes(currentMonth.toLowerCase()) && invYear;
+            });
+        });
+        // Add flashing red icon to sidebar Invoices nav if missing
+        const styleId = 'flashing-invoice-alert-style-sidebar';
+        if (!document.getElementById(styleId)) {
+            const style = document.createElement('style');
+            style.id = styleId;
+            style.innerHTML = `
+                .sidebar-alert-flash-red {
+                    color: #ff0000 !important;
+                    animation: flash-red-sidebar 1s linear infinite;
+                }
+                @keyframes flash-red-sidebar {
+                    0%, 100% { text-shadow: 0 0 0 #ff0000; }
+                    50% { text-shadow: 0 0 8px #ff0000; }
+                }
+            `;
+            document.head.appendChild(style);
+        }
+        const alertSpan = document.getElementById('sidebar-invoice-alert');
+        if (alertSpan) {
+            if (missingClients.length > 0) {
+                alertSpan.className = 'sidebar-alert-flash-red';
+                alertSpan.title = 'Some active clients are missing invoices for this month!';
+                alertSpan.innerHTML = '&#9888;'; // Unicode warning sign
+            } else {
+                alertSpan.className = '';
+                alertSpan.innerHTML = '';
+                alertSpan.title = '';
+            }
+        }
+    }, 0);
     
     navEl.innerHTML = html;
     

@@ -175,6 +175,9 @@ async function fetchClientsFromSupabase() {
     });
 }
 
+// Ensure global exposure for sidebar alert logic
+window.fetchClientsFromSupabase = fetchClientsFromSupabase;
+
 // Save (insert) a new client to Supabase
 async function saveClientToSupabase(client) {
     const normalizedDefaultUnitPrice = Number(client.defaultUnitPrice ?? client.default_unit_price ?? 0);
