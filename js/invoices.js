@@ -682,6 +682,71 @@ function updateInvoiceHeaderActions(tab, permissions = Auth.permissions) {
 
 function setActiveInvoiceTab(tab) {
     window.invoiceActiveTab = tab;
+
+    // Check for missing invoices and show alert icon on Invoices tab
+    (async () => {
+        if (tab === 'client' || tab === undefined) {
+            const today = new Date();
+            if (today.getDate() < 28) return;
+            let clients = [];
+            if (window.fetchClientsFromSupabase) {
+                clients = await window.fetchClientsFromSupabase();
+            } else if (typeof fetchClientsFromSupabase === 'function') {
+                clients = await fetchClientsFromSupabase();
+            }
+            const activeClients = (clients || []).filter(c => (c.status || '').toLowerCase() === 'active');
+            let invoices = [];
+            if (window.fetchInvoicesFromSupabase) {
+                invoices = await window.fetchInvoicesFromSupabase();
+            } else if (typeof fetchInvoicesFromSupabase === 'function') {
+                invoices = await fetchInvoicesFromSupabase();
+            }
+            const currentMonth = today.toLocaleString('en-US', { month: 'long' });
+            const currentYear = today.getFullYear();
+            const missingClients = activeClients.filter(client => {
+                const clientId = client.clientId || client.id || client.client_id;
+                return !invoices.some(inv => {
+                    const invClientId = inv.clientId || inv.client_id || inv.id;
+                    const invMonth = (inv.month || '').toLowerCase();
+                    const invYear = (inv.invoiceDate || inv.createdDate || inv.created_at || '').toString().includes(currentYear);
+                    return invClientId == clientId && invMonth.includes(currentMonth.toLowerCase()) && invYear;
+                });
+            });
+            // Add flashing red icon to Invoices tab if missing
+            const styleId = 'flashing-invoice-alert-style-toolbar';
+            if (!document.getElementById(styleId)) {
+                const style = document.createElement('style');
+                style.id = styleId;
+                style.innerHTML = `
+                    .toolbar-alert-flash-red {
+                        color: #ff0000 !important;
+                        animation: flash-red-toolbar 1s linear infinite;
+                    }
+                    @keyframes flash-red-toolbar {
+                        0%, 100% { text-shadow: 0 0 0 #ff0000; }
+                        50% { text-shadow: 0 0 8px #ff0000; }
+                    }
+                `;
+                document.head.appendChild(style);
+            }
+            const tabBtn = document.querySelector('.ledger-tabs .ledger-tab[data-invoice-tab="client"]');
+            if (tabBtn) {
+                let alertIcon = tabBtn.querySelector('.toolbar-alert-flash-red');
+                if (missingClients.length > 0) {
+                    if (!alertIcon) {
+                        alertIcon = document.createElement('span');
+                        alertIcon.className = 'toolbar-alert-flash-red';
+                        alertIcon.title = 'Some active clients are missing invoices for this month!';
+                        alertIcon.style.marginLeft = '8px';
+                        alertIcon.innerHTML = '&#9888;'; // Unicode warning sign
+                        tabBtn.appendChild(alertIcon);
+                    }
+                } else {
+                    if (alertIcon) alertIcon.remove();
+                }
+            }
+        }
+    })();
     updateInvoiceHeaderActions(tab);
 
     const tabs = document.querySelectorAll('.ledger-tabs .ledger-tab[data-invoice-tab]');
@@ -737,11 +802,31 @@ function renderClientInvoicesTab(contentEl) {
         });
 
         if (missingClients.length > 0) {
+            // Add flashing red alert style
+            const styleId = 'flashing-invoice-alert-style';
+            if (!document.getElementById(styleId)) {
+                const style = document.createElement('style');
+                style.id = styleId;
+                style.innerHTML = `
+                    .alert-flash-red {
+                        background: #ffdddd !important;
+                        color: #a10000 !important;
+                        border: 2px solid #ff0000 !important;
+                        font-weight: bold;
+                        animation: flash-red 1s linear infinite;
+                    }
+                    @keyframes flash-red {
+                        0%, 100% { box-shadow: 0 0 0 0 #ff0000; }
+                        50% { box-shadow: 0 0 16px 4px #ff0000; }
+                    }
+                `;
+                document.head.appendChild(style);
+            }
             const alertDiv = document.createElement('div');
-            alertDiv.className = 'alert alert-warning';
+            alertDiv.className = 'alert alert-flash-red';
             alertDiv.style.margin = '16px';
-            alertDiv.innerHTML = `<b>Alert:</b> The following active clients have not generated an invoice for <b>${currentMonth} ${currentYear}</b>:<br>` +
-                missingClients.map(c => `<span style="display:inline-block;margin-right:8px;">${c.name || c.clientName || c.id}</span>`).join(', ');
+            alertDiv.innerHTML = `<b>ALERT:</b> <span style="color:#a10000">The following active clients have not generated an invoice for <b>${currentMonth} ${currentYear}</b>:</span><br>` +
+                missingClients.map(c => `<span style=\"display:inline-block;margin-right:8px;\"><b>${c.name || c.clientName || c.id}</b></span>`).join(', ');
             const cardHeader = contentEl.querySelector('.card-header');
             if (cardHeader) cardHeader.parentNode.insertBefore(alertDiv, cardHeader.nextSibling);
         }
@@ -823,8 +908,10 @@ function renderClientInvoicesTab(contentEl) {
         <iframe id="pdf-print-frame" style="display: none;"></iframe>
     `;
 
+
     checkAndShowMissingInvoiceAlert();
     refreshInvoicesList();
+}
 
 function renderVendorInvoicesTab(contentEl) {
     window.lastVendorInvoiceSearchTerm = '';
