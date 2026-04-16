@@ -702,6 +702,51 @@ function setActiveInvoiceTab(tab) {
 function renderClientInvoicesTab(contentEl) {
     window.lastClientInvoiceSearchTerm = '';
 
+    async function checkAndShowMissingInvoiceAlert() {
+        const today = new Date();
+        if (today.getDate() < 28) return; // Only show alert on or after 28th
+
+        // Fetch all active clients
+        let clients = [];
+        if (window.fetchClientsFromSupabase) {
+            clients = await window.fetchClientsFromSupabase();
+        } else if (typeof fetchClientsFromSupabase === 'function') {
+            clients = await fetchClientsFromSupabase();
+        }
+        const activeClients = (clients || []).filter(c => (c.status || '').toLowerCase() === 'active');
+
+        // Fetch all invoices
+        let invoices = [];
+        if (window.fetchInvoicesFromSupabase) {
+            invoices = await window.fetchInvoicesFromSupabase();
+        } else if (typeof fetchInvoicesFromSupabase === 'function') {
+            invoices = await fetchInvoicesFromSupabase();
+        }
+        const currentMonth = today.toLocaleString('en-US', { month: 'long' });
+        const currentYear = today.getFullYear();
+
+        // Find active clients missing an invoice for this month
+        const missingClients = activeClients.filter(client => {
+            const clientId = client.clientId || client.id || client.client_id;
+            return !invoices.some(inv => {
+                const invClientId = inv.clientId || inv.client_id || inv.id;
+                const invMonth = (inv.month || '').toLowerCase();
+                const invYear = (inv.invoiceDate || inv.createdDate || inv.created_at || '').toString().includes(currentYear);
+                return invClientId == clientId && invMonth.includes(currentMonth.toLowerCase()) && invYear;
+            });
+        });
+
+        if (missingClients.length > 0) {
+            const alertDiv = document.createElement('div');
+            alertDiv.className = 'alert alert-warning';
+            alertDiv.style.margin = '16px';
+            alertDiv.innerHTML = `<b>Alert:</b> The following active clients have not generated an invoice for <b>${currentMonth} ${currentYear}</b>:<br>` +
+                missingClients.map(c => `<span style="display:inline-block;margin-right:8px;">${c.name || c.clientName || c.id}</span>`).join(', ');
+            const cardHeader = contentEl.querySelector('.card-header');
+            if (cardHeader) cardHeader.parentNode.insertBefore(alertDiv, cardHeader.nextSibling);
+        }
+    }
+
     contentEl.innerHTML = `
         <div class="card">
             <div class="card-header">
@@ -778,8 +823,8 @@ function renderClientInvoicesTab(contentEl) {
         <iframe id="pdf-print-frame" style="display: none;"></iframe>
     `;
 
+    checkAndShowMissingInvoiceAlert();
     refreshInvoicesList();
-}
 
 function renderVendorInvoicesTab(contentEl) {
     window.lastVendorInvoiceSearchTerm = '';
@@ -3248,18 +3293,15 @@ async function showGenerateInvoiceModal() {
                     <div class="form-group">
                         <label>Billing Month *</label>
                         <select id="invoice-month" required style="width: 100%; padding: 12px;">
-                            <option value="January BILL">January BILL</option>
-                            <option value="February BILL" selected>February BILL</option>
-                            <option value="March BILL">March BILL</option>
-                            <option value="April BILL">April BILL</option>
-                            <option value="May BILL">May BILL</option>
-                            <option value="June BILL">June BILL</option>
-                            <option value="July BILL">July BILL</option>
-                            <option value="August BILL">August BILL</option>
-                            <option value="September BILL">September BILL</option>
-                            <option value="October BILL">October BILL</option>
-                            <option value="November BILL">November BILL</option>
-                            <option value="December BILL">December BILL</option>
+                            ${(() => {
+                                const months = [
+                                    'January BILL', 'February BILL', 'March BILL', 'April BILL', 'May BILL', 'June BILL',
+                                    'July BILL', 'August BILL', 'September BILL', 'October BILL', 'November BILL', 'December BILL'
+                                ];
+                                const now = new Date();
+                                const currentMonth = now.getMonth();
+                                return months.map((m, i) => `<option value="${m}"${i === currentMonth ? ' selected' : ''}>${m}</option>`).join('');
+                            })()}
                         </select>
                     </div>
                     
