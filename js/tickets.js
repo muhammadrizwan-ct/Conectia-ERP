@@ -296,6 +296,8 @@ async function loadTickets() {
 
     window._allTickets = await fetchTickets();
     renderTicketsTable(window._allTickets);
+    // Auto-hide the red dot after 20 seconds when opening the Tickets page
+    setupTicketsPageDotAutoHide();
 }
 
 function filterTickets() {
