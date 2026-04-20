@@ -897,3 +897,17 @@ body {
         border: 1px solid #000;
     }
 }
+@keyframes toolbar-alert-blink {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.2; }
+}
+.toolbar-alert-dot {
+    background: #dc2626;
+    border-radius: 50%;
+    width: 10px;
+    height: 10px;
+    display: inline-block;
+    vertical-align: middle;
+    margin-left: 8px;
+    animation: toolbar-alert-blink 1s linear infinite;
+}

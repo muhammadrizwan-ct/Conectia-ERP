@@ -42,11 +42,7 @@ function subscribeToTicketUpdates() {
 }
 
 function handleTicketRealtimeEvent(payload, type) {
-    // Only show popup if user is on tickets page
-    const activeNav = document.querySelector('.nav-item.active');
-    const isOnTicketsPage = activeNav && activeNav.textContent.includes('Tickets');
-    if (!isOnTicketsPage) return;
-
+    // Always show toolbar alert for new tickets, and popup if on Tickets page
     let ticketId = null;
     let ticketNumber = '';
     let title = '';
@@ -58,6 +54,8 @@ function handleTicketRealtimeEvent(payload, type) {
         title = payload.new?.title || payload.old?.title || '';
         if (payload.eventType === 'INSERT') {
             message = `New ticket created: <strong>${escapeHtmlTickets(ticketNumber)}</strong> - ${escapeHtmlTickets(title)}`;
+            // Show toolbar alert (badge or notification)
+            showToolbarTicketAlert();
         } else if (payload.eventType === 'UPDATE') {
             message = `Ticket updated: <strong>${escapeHtmlTickets(ticketNumber)}</strong> - ${escapeHtmlTickets(title)}`;
         }
@@ -70,8 +68,62 @@ function handleTicketRealtimeEvent(payload, type) {
         }
     }
 
-    if (message && ticketId) {
+    // Show popup only if user is on Tickets page
+    const activeNav = document.querySelector('.nav-item.active');
+    const isOnTicketsPage = activeNav && activeNav.textContent.includes('Tickets');
+     if (message && ticketId && isOnTicketsPage) {
         showTicketPopup(message, ticketId);
+        setupTicketsPageDotAutoHide();
+    }
+}
+function showToolbarTicketAlert() {
+    // Find or create the tickets dot (red dot, no counter)
+    let dot = document.getElementById('tickets-alert-dot');
+    if (!dot) {
+        // Try to find the tickets nav/tab button
+        const nav = document.getElementById('sidebar-nav') || document.body;
+        let ticketBtn = nav.querySelector('[data-page="tickets"]') || document.getElementById('header-actions');
+        if (ticketBtn) {
+            dot = document.createElement('span');
+            dot.id = 'tickets-alert-dot';
+            dot.className = 'toolbar-alert-dot';
+            dot.style.display = 'inline-block';
+            ticketBtn.appendChild(dot);
+        }
+    } else {
+        dot.style.display = 'inline-block';
+    }
+    // Also show dot on Tickets page tab if not already present
+    let pageDot = document.getElementById('tickets-page-alert-dot');
+    if (!pageDot) {
+        const pageTitle = document.getElementById('page-title');
+        if (pageTitle) {
+            pageDot = document.createElement('span');
+            pageDot.id = 'tickets-page-alert-dot';
+            pageDot.className = 'toolbar-alert-dot';
+            pageDot.style.display = 'inline-block';
+            pageTitle.appendChild(pageDot);
+        }
+    } else {
+        pageDot.style.display = 'inline-block';
+    }
+}
+// Hide alert dots (toolbar and ticket page)
+function hideTicketAlertDots() {
+    const dot = document.getElementById('tickets-alert-dot');
+    if (dot) dot.style.display = 'none';
+    const pageDot = document.getElementById('tickets-page-alert-dot');
+    if (pageDot) pageDot.style.display = 'none';
+}
+
+// When user opens Tickets page, hide dots after 20 seconds
+function setupTicketsPageDotAutoHide() {
+    const activeNav = document.querySelector('.nav-item.active');
+    const isOnTicketsPage = activeNav && activeNav.textContent.includes('Tickets');
+    if (isOnTicketsPage) {
+        setTimeout(() => {
+            hideTicketAlertDots();
+        }, 20000);
     }
 }
 
