@@ -29,7 +29,9 @@ function saveClientStatusMap(map) {
 
 function normalizeClientStatus(status) {
     const value = String(status || '').trim().toLowerCase();
-    return value === 'inactive' ? 'Inactive' : 'Active';
+    if (value === 'inactive') return 'Inactive';
+    if (value === 'demo') return 'Demo';
+    return 'Active';
 }
 
 function resolveClientStatus(client = {}) {
@@ -874,6 +876,7 @@ async function showAddClientModal() {
                     <select id="client-status" style="width: 100%; padding: 10px; border: 1px solid var(--gray-300); border-radius: 4px; box-sizing: border-box;">
                         <option value="Active">Active</option>
                         <option value="Inactive">Inactive</option>
+                        <option value="Demo">Demo</option>
                     </select>
                 </div>
                 
@@ -1049,8 +1052,9 @@ function editClient(clientId) {
                 <div>
                     <label style="display: block; margin-bottom: 6px; font-weight: 600;">Status</label>
                     <select id="edit-client-status" style="width: 100%; padding: 10px; border: 1px solid var(--gray-300); border-radius: 4px; box-sizing: border-box;">
-                        <option value="Active" ${String(client.status || '').toLowerCase() !== 'inactive' ? 'selected' : ''}>Active</option>
+                        <option value="Active" ${String(client.status || '').toLowerCase() === 'active' ? 'selected' : ''}>Active</option>
                         <option value="Inactive" ${String(client.status || '').toLowerCase() === 'inactive' ? 'selected' : ''}>Inactive</option>
+                        <option value="Demo" ${String(client.status || '').toLowerCase() === 'demo' ? 'selected' : ''}>Demo</option>
                     </select>
                 </div>
                 

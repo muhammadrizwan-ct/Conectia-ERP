@@ -1236,19 +1236,19 @@ function generateClientDistributionChart() {
             const chartCtx = ctx.getContext('2d');
             // Fetch real clients
             const clients = await getReportsClients();
-            let active = 0, inactive = 0, pending = 0;
+            let active = 0, inactive = 0, demo = 0;
             clients.forEach(c => {
                 const status = String(c.status || '').toLowerCase();
                 if (status === 'active') active++;
                 else if (status === 'inactive') inactive++;
-                else pending++;
+                else if (status === 'demo') demo++;
             });
             new Chart(chartCtx, {
                 type: 'doughnut',
                 data: {
-                    labels: ['Active', 'Inactive', 'Pending'],
+                    labels: ['Active', 'Inactive', 'Demo'],
                     datasets: [{
-                        data: [active, inactive, pending],
+                        data: [active, inactive, demo],
                         backgroundColor: ['#059669', '#ef4444', '#f59e0b']
                     }]
                 },
