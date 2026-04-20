@@ -1229,34 +1229,43 @@ function generateRevenueReportChart() {
 }
 
 function generateClientDistributionChart() {
-    try {
-        const ctx = document.getElementById('client-distribution-chart');
-        if (!ctx) return;
-        
-        const chartCtx = ctx.getContext('2d');
-        
-        new Chart(chartCtx, {
-            type: 'doughnut',
-            data: {
-                labels: ['Active', 'Inactive', 'Pending'],
-                datasets: [{
-                    data: [18, 4, 2],
-                    backgroundColor: ['#059669', '#ef4444', '#f59e0b']
-                }]
-            },
-            options: {
-                responsive: true,
-                maintainAspectRatio: false,
-                plugins: {
-                    legend: {
-                        position: 'bottom'
+    (async () => {
+        try {
+            const ctx = document.getElementById('client-distribution-chart');
+            if (!ctx) return;
+            const chartCtx = ctx.getContext('2d');
+            // Fetch real clients
+            const clients = await getReportsClients();
+            let active = 0, inactive = 0, pending = 0;
+            clients.forEach(c => {
+                const status = String(c.status || '').toLowerCase();
+                if (status === 'active') active++;
+                else if (status === 'inactive') inactive++;
+                else pending++;
+            });
+            new Chart(chartCtx, {
+                type: 'doughnut',
+                data: {
+                    labels: ['Active', 'Inactive', 'Pending'],
+                    datasets: [{
+                        data: [active, inactive, pending],
+                        backgroundColor: ['#059669', '#ef4444', '#f59e0b']
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: {
+                        legend: {
+                            position: 'bottom'
+                        }
                     }
                 }
-            }
-        });
-    } catch (e) {
-        console.warn('Chart error:', e);
-    }
+            });
+        } catch (e) {
+            console.warn('Chart error:', e);
+        }
+    })();
 }
 
 function generateRevenueReport() {
