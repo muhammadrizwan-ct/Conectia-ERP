@@ -952,10 +952,12 @@ function updateTicketsBadge(count) {
     const badge = document.getElementById('tickets-badge');
     if (!badge) return;
     if (count > 0) {
-        badge.textContent = count > 99 ? '99+' : String(count);
+        badge.textContent = '';
         badge.style.display = '';
+        badge.classList.add('toolbar-alert-dot'); // ensure it blinks as a dot
     } else {
         badge.style.display = 'none';
+        badge.classList.remove('toolbar-alert-dot');
     }
 }
 
