@@ -283,6 +283,7 @@ async function loadTickets() {
     container.innerHTML = `
         <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px; flex-wrap: wrap; gap: 10px;">
             <div style="display: flex; gap: 10px; align-items: center; flex-wrap: wrap;">
+                <input id="ticket-search-number" type="text" placeholder="Search Ticket # (e.g. TKT-0001)" style="padding: 8px 12px; border: 1px solid var(--gray-300); border-radius: 6px; font-size: 14px; min-width: 180px;" oninput="filterTickets()" />
                 <select id="ticket-status-filter" onchange="filterTickets()" style="padding: 8px 12px; border: 1px solid var(--gray-300); border-radius: 6px; font-size: 14px;">
                     <option value="">All Statuses</option>
                     <option value="open">Open</option>
@@ -313,10 +314,12 @@ async function loadTickets() {
 function filterTickets() {
     const statusFilter = document.getElementById('ticket-status-filter')?.value || '';
     const priorityFilter = document.getElementById('ticket-priority-filter')?.value || '';
+    const searchNumber = document.getElementById('ticket-search-number')?.value.trim().toLowerCase() || '';
     let tickets = window._allTickets || [];
 
     if (statusFilter) tickets = tickets.filter(t => t.status === statusFilter);
     if (priorityFilter) tickets = tickets.filter(t => t.priority === priorityFilter);
+    if (searchNumber) tickets = tickets.filter(t => (t.ticket_number || '').toLowerCase().includes(searchNumber));
 
     renderTicketsTable(tickets);
 }
