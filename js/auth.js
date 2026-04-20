@@ -191,7 +191,14 @@ class AuthService {
             console.error('Logout error:', error);
         } finally {
             this.clearAuth();
-            window.location.href = 'index.html';
+            // Clear all local and session storage for extra safety
+            try {
+                localStorage.clear();
+                sessionStorage.clear();
+            } catch (e) {}
+            // Force a full reload after redirect
+            window.location.replace('index.html');
+            setTimeout(() => { window.location.reload(true); }, 100);
         }
     }
 
