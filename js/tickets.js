@@ -1,3 +1,5 @@
+// Global variable to track the dot auto-hide timer
+let ticketDotAutoHideTimer = null;
 // --- Per-Ticket Last Viewed Tracking ---
 const TICKETS_LAST_VIEWED_KEY = 'vts_tickets_last_viewed';
 
@@ -121,8 +123,12 @@ function setupTicketsPageDotAutoHide() {
     const activeNav = document.querySelector('.nav-item.active');
     const isOnTicketsPage = activeNav && activeNav.textContent.includes('Tickets');
     if (isOnTicketsPage) {
-        setTimeout(() => {
+        if (ticketDotAutoHideTimer) {
+            clearTimeout(ticketDotAutoHideTimer);
+        }
+        ticketDotAutoHideTimer = setTimeout(() => {
             hideTicketAlertDots();
+            ticketDotAutoHideTimer = null;
         }, 20000);
     }
 }
