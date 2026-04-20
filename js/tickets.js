@@ -1069,12 +1069,12 @@ function ultraGranularUpdateTicketsTable() {
     }
 }
 
-// Replace smooth update interval to use granular update
+// Replace smooth update interval to use full page refresh
 if (window._smoothTicketsInterval) clearInterval(window._smoothTicketsInterval);
 window._smoothTicketsInterval = setInterval(() => {
     const activeNav = document.querySelector('.nav-item.active');
     const isOnTicketsPage = activeNav && activeNav.textContent.includes('Tickets');
-    if (isOnTicketsPage) ultraGranularUpdateTicketsTable();
+    if (isOnTicketsPage && typeof loadTickets === 'function') loadTickets();
 }, 30000);
 
 // Expose globally
