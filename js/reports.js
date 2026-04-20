@@ -2,8 +2,6 @@
 // NOTE: fetchInvoicesFromSupabase() and fetchClientsFromSupabase() are defined
 // in invoices.js and clients.js respectively (with proper normalization).
 async function loadReports() {
-    // Expose globally for routing
-    window.loadReports = loadReports;
     // Clear header actions
     document.getElementById('header-actions').innerHTML = '';
     
