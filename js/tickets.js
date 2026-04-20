@@ -254,6 +254,10 @@ const TICKET_PRIORITIES = {
 
 // Main load function
 async function loadTickets() {
+        // Always clear any old alert dot when loading the Tickets page
+        hideTicketAlertDots();
+        // Always clear any old alert dot before showing a new one
+        hideTicketAlertDots();
     const container = document.getElementById('content-body');
     if (!container) return;
 
