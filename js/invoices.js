@@ -795,12 +795,17 @@ function renderClientInvoicesTab(contentEl) {
 
         // Find active clients missing an invoice for this month
         const missingClients = activeClients.filter(client => {
-            const clientId = client.clientId || client.id || client.client_id;
+            // Normalize client IDs and month for robust matching
+            const normalizeId = id => (id === undefined || id === null) ? '' : String(id).trim();
+            const normalizeMonth = m => (m || '').toLowerCase().replace(/\./g, '').trim();
+            const clientId = normalizeId(client.clientId || client.id || client.client_id);
             return !invoices.some(inv => {
-                const invClientId = inv.clientId || inv.client_id || inv.id;
-                const invMonth = (inv.month || '').toLowerCase();
+                const invClientId = normalizeId(inv.clientId || inv.client_id || inv.id);
+                const invMonth = normalizeMonth(inv.month || inv.invoiceMonth || inv.invoice_month || '');
                 const invYear = (inv.invoiceDate || inv.createdDate || inv.created_at || '').toString().includes(currentYear);
-                return invClientId == clientId && invMonth.includes(currentMonth.toLowerCase()) && invYear;
+                // Accept both full and short month names, and ignore dots (e.g., 'Mar.' vs 'March')
+                const monthMatch = invMonth === currentMonth.toLowerCase() || invMonth.startsWith(currentMonth.toLowerCase().slice(0, 3));
+                return invClientId && clientId && invClientId === clientId && monthMatch && invYear;
             });
         });
 
