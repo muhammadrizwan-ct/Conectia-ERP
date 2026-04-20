@@ -1179,53 +1179,97 @@ async function runAIReportQuery() {
 }
 
 function generateRevenueReportChart() {
-    try {
-        const ctx = document.getElementById('revenue-report-chart');
-        if (!ctx) return;
-        
-        const chartCtx = ctx.getContext('2d');
-        
-        new Chart(chartCtx, {
-            type: 'bar',
-            data: {
-                labels: ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun'],
-                datasets: [{
-                    label: 'Revenue',
-                    data: [150000, 185000, 195000, 170000, 210000, 225000],
-                    backgroundColor: '#2563eb'
+    (async () => {
+        try {
+            const ctx = document.getElementById('revenue-report-chart');
+            if (!ctx) return;
+            const chartCtx = ctx.getContext('2d');
+
+            // Fetch data
+            const [clients, invoices, payments] = await Promise.all([
+                getReportsClients(),
+                getReportsInvoices(),
+                (typeof fetchPaymentsFromSupabase === 'function' ? fetchPaymentsFromSupabase() : Promise.resolve([]))
+            ]);
+
+            // Get last 12 months
+            const months = getLast12MonthKeys();
+            const monthLabels = months.map(m => m.label);
+            const monthKeys = months.map(m => m.key);
+
+            // Filter active clients
+            const activeClientNames = new Set(
+                clients.filter(c => String(c.status || '').toLowerCase() === 'active').map(c => String(c.name || '').trim())
+            );
+
+            // Expected: sum of invoices for active clients by month
+            const expectedByMonth = {};
+            invoices.forEach(inv => {
+                const clientName = String(inv.clientName || inv.client_name || '').trim();
+                const monthKey = getInvoiceMonthKey(inv);
+                if (!activeClientNames.has(clientName) || !monthKeys.includes(monthKey)) return;
+                expectedByMonth[monthKey] = (expectedByMonth[monthKey] || 0) + normalizeReportMoney(inv.totalAmount ?? inv.total_amount ?? inv.total);
+            });
+
+            // Revenue: sum of payments by payment date month
+            const revenueByMonth = {};
+            payments.forEach(payment => {
+                const dateStr = payment.paymentDate || payment.payment_date || payment.date || payment.created_at || '';
+                const dt = new Date(dateStr);
+                if (Number.isNaN(dt.getTime())) return;
+                const key = `${dt.getFullYear()}-${String(dt.getMonth() + 1).padStart(2, '0')}`;
+                if (!monthKeys.includes(key)) return;
+                revenueByMonth[key] = (revenueByMonth[key] || 0) + normalizeReportMoney(payment.paidAmount ?? payment.amount ?? payment.totalAmount ?? 0);
+            });
+
+            const expectedData = monthKeys.map(key => expectedByMonth[key] || 0);
+            const revenueData = monthKeys.map(key => revenueByMonth[key] || 0);
+
+            new Chart(chartCtx, {
+                type: 'bar',
+                data: {
+                    labels: monthLabels,
+                    datasets: [
+                        {
+                            label: 'Revenue',
+                            data: revenueData,
+                            backgroundColor: '#2563eb'
+                        },
+                        {
+                            label: 'Expected',
+                            data: expectedData,
+                            backgroundColor: '#90caf9'
+                        }
+                    ]
                 },
-                {
-                    label: 'Expected',
-                    data: [160000, 180000, 200000, 180000, 220000, 230000],
-                    backgroundColor: '#90caf9'
-                }]
-            },
-            options: {
-                responsive: true,
-                maintainAspectRatio: false,
-                plugins: {
-                    tooltip: {
-                        callbacks: {
-                            label: function(context) {
-                                return formatPKR(context.raw);
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: {
+                        tooltip: {
+                            callbacks: {
+                                label: function(context) {
+                                    return formatPKR(context.raw);
+                                }
                             }
                         }
                     }
-                },
-                scales: {
-                    y: {
-                        ticks: {
-                            callback: function(value) {
-                                return formatPKR(value);
+                    },
+                    scales: {
+                        y: {
+                            ticks: {
+                                callback: function(value) {
+                                    return formatPKR(value);
+                                }
                             }
                         }
                     }
                 }
-            }
-        });
-    } catch (e) {
-        console.warn('Chart error:', e);
-    }
+            });
+        } catch (e) {
+            console.warn('Chart error:', e);
+        }
+    })();
 }
 
 function generateClientDistributionChart() {
