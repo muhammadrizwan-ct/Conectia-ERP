@@ -5,11 +5,10 @@ async function logClientAudit(action, clientData) {
         await supabase.from('activity_logs').insert([
             {
                 user_id: user.id || null,
-                username: user.username || user.email || 'unknown',
                 action: action, // 'create', 'update', 'delete'
-                entity: 'client',
+                entity_type: 'client',
                 entity_id: clientData?.clientId || clientData?.clientid || clientData?.id || null,
-                details: clientData ? JSON.stringify(clientData) : null
+                details: clientData || null
             }
         ]);
     } catch (e) {
