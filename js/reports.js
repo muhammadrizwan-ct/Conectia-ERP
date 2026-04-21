@@ -123,6 +123,8 @@ async function loadReports() {
             </div>
         </div>
     `;
+        // Expose loadReports globally for SPA routing
+        window.loadReports = loadReports;
     
     // Generate demo charts
     generateRevenueReportChart();
@@ -1253,7 +1255,6 @@ function generateRevenueReportChart() {
                                 }
                             }
                         }
-                    }
                     },
                     scales: {
                         y: {
