@@ -62,13 +62,20 @@ async function fetchUsersFromSupabase() {
 // Fetch all audit logs from Supabase
 async function fetchAuditLogsFromSupabase() {
     const { data, error } = await supabase
-        .from('audit_log')
-        .select('*');
+        .from('activity_logs')
+        .select('*')
+        .order('created_at', { ascending: false });
     if (error) {
         console.error('Supabase fetch error:', error);
         return [];
     }
-    return data || [];
+    // Map fields for display compatibility
+    return (data || []).map(log => ({
+        timestamp: log.created_at,
+        performedBy: log.username || log.user_id || 'System',
+        action: log.action,
+        details: log.details,
+    }));
 }
 // Admin Module
 async function loadAdmin() {
