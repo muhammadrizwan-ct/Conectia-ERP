@@ -1,3 +1,21 @@
+// --- Audit Log Helper ---
+async function logClientAudit(action, clientData) {
+    try {
+        const user = (window.Auth && window.Auth.user) || {};
+        await supabase.from('activity_logs').insert([
+            {
+                user_id: user.id || null,
+                username: user.username || user.email || 'unknown',
+                action: action, // 'create', 'update', 'delete'
+                entity: 'client',
+                entity_id: clientData?.clientId || clientData?.clientid || clientData?.id || null,
+                details: clientData ? JSON.stringify(clientData) : null
+            }
+        ]);
+    } catch (e) {
+        console.warn('Audit log failed:', e);
+    }
+}
 // --- Supabase Integration ---
 var supabase = window.supabaseClient;
 const CLIENT_DEFAULT_RATE_STORAGE_KEY = 'vts_client_default_rates';
@@ -221,6 +239,7 @@ async function saveClientToSupabase(client) {
 
     let lastError = null;
 
+
     for (const rawPayload of candidatePayloads) {
         const payload = Object.fromEntries(
             Object.entries(rawPayload).filter(([, value]) => value !== undefined)
@@ -236,6 +255,8 @@ async function saveClientToSupabase(client) {
 
             if (!error) {
                 window.lastClientSaveError = null;
+                // Audit log for create
+                await logClientAudit('create', data || payload);
                 return data || null;
             }
 
@@ -395,6 +416,7 @@ async function updateClientInSupabase(clientId, updates) {
 
     let lastError = null;
 
+
     for (const rawPayload of candidatePayloads) {
         const cleanPayload = Object.fromEntries(
             Object.entries(rawPayload).filter(([, value]) => value !== undefined)
@@ -412,6 +434,8 @@ async function updateClientInSupabase(clientId, updates) {
 
                 if (!error) {
                     if (Array.isArray(data) && data.length > 0) {
+                        // Audit log for update
+                        await logClientAudit('update', data[0]);
                         return data[0];
                     }
                     break;
@@ -462,7 +486,19 @@ async function deleteClientFromSupabase(clientId) {
 
     let lastError = null;
 
+
     for (const matcher of matchers) {
+        // Fetch client before delete for audit
+        let clientToDelete = null;
+        try {
+            const { data } = await supabase
+                .from('clients')
+                .select('*')
+                .eq(matcher.column, matcher.value)
+                .maybeSingle();
+            clientToDelete = data;
+        } catch (e) {}
+
         const { error } = await supabase
             .from('clients')
             .delete()
@@ -483,6 +519,10 @@ async function deleteClientFromSupabase(clientId) {
             continue;
         }
 
+        // Audit log for delete
+        if (clientToDelete) {
+            await logClientAudit('delete', clientToDelete);
+        }
         return true;
     }
 
