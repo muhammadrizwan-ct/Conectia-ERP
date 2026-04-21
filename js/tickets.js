@@ -21,6 +21,24 @@ function getTicketLastViewed(ticketId) {
     const viewed = getTicketsLastViewed();
     return viewed[ticketId] || '1970-01-01T00:00:00Z';
 }
+// --- Audit Log Helper ---
+async function logTicketAudit(action, ticketData) {
+    try {
+        const user = (window.Auth && window.Auth.user) || {};
+        await supabase.from('activity_logs').insert([
+            {
+                user_id: user.id || null,
+                username: user.username || user.email || 'unknown',
+                action: action, // 'create', 'update', 'delete'
+                entity: 'ticket',
+                entity_id: ticketData?.id || ticketData?.ticket_number || null,
+                details: ticketData ? JSON.stringify(ticketData) : null
+            }
+        ]);
+    } catch (e) {
+        console.warn('Audit log failed:', e);
+    }
+}
 // Tickets Module
 var supabase = window.supabaseClient;
 
@@ -494,6 +512,11 @@ async function createTicket() {
         return;
     }
 
+    // Audit log: ticket create
+    if (data && data[0]) {
+        await logTicketAudit('create', data[0]);
+    }
+
     showNotification('Ticket created successfully', 'success');
     closeModal();
     loadTickets();
@@ -881,7 +904,8 @@ async function updateTicket(ticketId) {
     const oldTicket = (window._allTickets || []).find(t => t.id === ticketId);
     const currentUser = Auth?.user?.username || Auth?.user?.email || 'Unknown';
 
-    const { error } = await supabase
+
+    const { data, error } = await supabase
         .from('tickets')
         .update({
             title: title,
@@ -892,12 +916,18 @@ async function updateTicket(ticketId) {
             due_date: dueDate,
             updated_at: new Date().toISOString()
         })
-        .eq('id', ticketId);
+        .eq('id', ticketId)
+        .select('*');
 
     if (error) {
         console.error('Update ticket error:', error);
         showNotification('Failed to update ticket: ' + (error.message || 'Unknown error'), 'error');
         return;
+    }
+
+    // Audit log: ticket update
+    if (data && data[0]) {
+        await logTicketAudit('update', data[0]);
     }
 
     // Log system comments for changes
