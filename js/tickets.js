@@ -1204,8 +1204,43 @@ function getTicketsLastSeen() {
 }
 
 function markTicketsSeen() {
-    localStorage.setItem(TICKETS_LAST_SEEN_KEY, new Date().toISOString());
+    const now = new Date().toISOString();
+    localStorage.setItem(TICKETS_LAST_SEEN_KEY, now);
     updateTicketsBadge(0);
+    // Persist to Supabase so the badge stays cleared across devices/logins
+    const userId = window.Auth?.user?.id;
+    if (supabase && userId) {
+        supabase
+            .from('users')
+            .update({ tickets_last_seen_at: now })
+            .eq('id', userId)
+            .then();
+    }
+}
+
+/**
+ * On login, load the user's tickets_last_seen_at from Supabase and sync it
+ * to localStorage so the toolbar badge reflects the correct per-user state.
+ */
+async function syncTicketsLastSeenFromDB() {
+    try {
+        const userId = window.Auth?.user?.id;
+        if (!supabase || !userId) return;
+        const { data, error } = await supabase
+            .from('users')
+            .select('tickets_last_seen_at')
+            .eq('id', userId)
+            .single();
+        if (!error && data?.tickets_last_seen_at) {
+            // Only update localStorage if DB value is newer than what's stored
+            const stored = localStorage.getItem(TICKETS_LAST_SEEN_KEY) || '1970-01-01T00:00:00Z';
+            if (new Date(data.tickets_last_seen_at) > new Date(stored)) {
+                localStorage.setItem(TICKETS_LAST_SEEN_KEY, data.tickets_last_seen_at);
+            }
+        }
+    } catch (e) {
+        // silently ignore — badge will just fall back to localStorage
+    }
 }
 
 function updateTicketsBadge(count) {
@@ -1254,9 +1289,12 @@ setInterval(() => {
     }
 }, 15000);
 
-// Initial check after page load
-setTimeout(() => {
-    if (Auth?.isLoggedIn?.()) checkTicketUpdates();
+// Initial check after page load — sync from DB first so the badge is accurate on login
+setTimeout(async () => {
+    if (Auth?.isLoggedIn?.()) {
+        await syncTicketsLastSeenFromDB();
+        checkTicketUpdates();
+    }
 }, 2000);
 
 // --- Smooth Ticket Table Update ---
