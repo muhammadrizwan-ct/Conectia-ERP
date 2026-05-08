@@ -614,6 +614,114 @@ function clearTicketAttachment() {
     if (preview) preview.style.display = 'none';
 }
 
+// --- Voice Note Recording ---
+window._voiceNoteBlob = null;
+window._voiceNoteMediaRecorder = null;
+window._voiceNoteChunks = [];
+window._voiceNoteTimerInterval = null;
+window._voiceNoteSeconds = 0;
+
+async function startVoiceRecording() {
+    if (window._voiceNoteMediaRecorder) return; // already recording
+    try {
+        const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+        const mimeType = MediaRecorder.isTypeSupported('audio/webm') ? 'audio/webm' : 'audio/ogg';
+        window._voiceNoteChunks = [];
+        window._voiceNoteBlob = null;
+        window._voiceNoteSeconds = 0;
+
+        const recorder = new MediaRecorder(stream, { mimeType });
+        window._voiceNoteMediaRecorder = recorder;
+
+        recorder.ondataavailable = e => { if (e.data.size > 0) window._voiceNoteChunks.push(e.data); };
+        recorder.onstop = () => {
+            stream.getTracks().forEach(t => t.stop());
+            window._voiceNoteBlob = new Blob(window._voiceNoteChunks, { type: mimeType });
+            window._voiceNoteMediaRecorder = null;
+            clearInterval(window._voiceNoteTimerInterval);
+            window._voiceNoteTimerInterval = null;
+            _showVoiceNotePreview(window._voiceNoteBlob);
+        };
+        recorder.start();
+
+        // Update mic button to "stop" state
+        const micBtn = document.getElementById('ticket-mic-btn');
+        if (micBtn) {
+            micBtn.style.background = '#d32f2f';
+            micBtn.style.color = 'white';
+            micBtn.title = 'Stop recording';
+            micBtn.innerHTML = '<i class="fas fa-stop"></i>';
+            micBtn.onclick = stopVoiceRecording;
+        }
+        // Show timer
+        const timerEl = document.getElementById('ticket-voice-timer');
+        if (timerEl) { timerEl.style.display = 'inline-flex'; timerEl.textContent = '00:00'; }
+
+        window._voiceNoteTimerInterval = setInterval(() => {
+            window._voiceNoteSeconds++;
+            const m = Math.floor(window._voiceNoteSeconds / 60).toString().padStart(2, '0');
+            const s = (window._voiceNoteSeconds % 60).toString().padStart(2, '0');
+            const el = document.getElementById('ticket-voice-timer');
+            if (el) el.textContent = `${m}:${s}`;
+        }, 1000);
+    } catch (e) {
+        showNotification('Microphone access denied or not available.', 'error');
+    }
+}
+
+function stopVoiceRecording() {
+    if (window._voiceNoteMediaRecorder && window._voiceNoteMediaRecorder.state !== 'inactive') {
+        window._voiceNoteMediaRecorder.stop();
+    }
+    const micBtn = document.getElementById('ticket-mic-btn');
+    if (micBtn) {
+        micBtn.style.background = '';
+        micBtn.style.color = '';
+        micBtn.title = 'Record voice note';
+        micBtn.innerHTML = '<i class="fas fa-microphone"></i>';
+        micBtn.onclick = startVoiceRecording;
+    }
+    const timerEl = document.getElementById('ticket-voice-timer');
+    if (timerEl) { timerEl.style.display = 'none'; timerEl.textContent = '00:00'; }
+}
+
+function _showVoiceNotePreview(blob) {
+    const preview = document.getElementById('ticket-voice-preview');
+    if (!preview) return;
+    const url = URL.createObjectURL(blob);
+    preview.innerHTML = `
+        <div style="display: flex; align-items: center; gap: 8px; background: var(--gray-50); border: 1px solid var(--gray-300); border-radius: 8px; padding: 8px 12px;">
+            <i class="fas fa-microphone" style="color: #d32f2f; font-size: 16px;"></i>
+            <audio controls src="${url}" style="height: 32px; flex: 1; min-width: 0;"></audio>
+            <button onclick="discardVoiceNote()" style="background: none; border: none; color: var(--danger); cursor: pointer; font-size: 20px; line-height: 1;" title="Discard voice note">
+                <i class="fas fa-times-circle"></i>
+            </button>
+        </div>
+    `;
+    preview.style.display = 'block';
+}
+
+function discardVoiceNote() {
+    window._voiceNoteBlob = null;
+    const preview = document.getElementById('ticket-voice-preview');
+    if (preview) { preview.innerHTML = ''; preview.style.display = 'none'; }
+}
+
+async function uploadVoiceNote(blob) {
+    const ext = blob.type.includes('ogg') ? 'ogg' : 'webm';
+    const fileName = `voice_${Date.now()}_${Math.random().toString(36).substring(2, 8)}.${ext}`;
+    const filePath = `voice-notes/${fileName}`;
+    const { data, error } = await supabase.storage
+        .from('ticket-attachments')
+        .upload(filePath, blob, { cacheControl: '3600', upsert: false, contentType: blob.type });
+    if (error) {
+        showNotification('Failed to upload voice note: ' + (error.message || 'Unknown error'), 'error');
+        return null;
+    }
+    const { data: urlData } = supabase.storage.from('ticket-attachments').getPublicUrl(filePath);
+    return urlData?.publicUrl || null;
+}
+
 // Upload attachment to Supabase Storage
 async function uploadTicketAttachment(file) {
     // Enforce 20MB file size limit
@@ -652,15 +760,22 @@ async function addTicketComment(ticketId) {
     const fileInput = document.getElementById('ticket-attachment-input');
     const comment = (input?.value || '').trim();
     const file = fileInput?.files?.[0] || null;
+    const voiceBlob = window._voiceNoteBlob || null;
 
-    if (!comment && !file) {
-        showNotification('Please enter a comment or attach a screenshot', 'error');
+    if (!comment && !file && !voiceBlob) {
+        showNotification('Please enter a comment, attach a screenshot, or record a voice note', 'error');
         return;
     }
 
     // Upload attachment if present
     let attachmentUrl = null;
-    if (file) {
+    if (voiceBlob) {
+        showNotification('Uploading voice note...', 'info');
+        attachmentUrl = await uploadVoiceNote(voiceBlob);
+        if (!attachmentUrl) return;
+        showNotification('Voice note uploaded successfully', 'success');
+        discardVoiceNote();
+    } else if (file) {
         showNotification('Uploading screenshot...', 'info');
         attachmentUrl = await uploadTicketAttachment(file);
         if (!attachmentUrl) return; // upload failed, error already shown
@@ -746,7 +861,17 @@ function renderCommentsHTML(comments) {
                     <div style="font-weight: 600; font-size: 12px; color: ${isOwn ? '#1976d2' : 'var(--gray-700)'}; margin-bottom: 4px;">
                         ${escapeHtmlTickets(userLabel)}
                     </div>
-                    ${c.attachment_url ? `<div style="margin-bottom: 6px;"><a href="${escapeHtmlTickets(c.attachment_url)}" target="_blank" rel="noopener noreferrer"><img src="${escapeHtmlTickets(c.attachment_url)}" style="max-width: 200px; max-height: 150px; border-radius: 6px; border: 1px solid var(--gray-300); cursor: pointer;" alt="attachment" /></a></div>` : ''}
+                    ${c.attachment_url ? (() => {
+                        const url = escapeHtmlTickets(c.attachment_url);
+                        const isAudio = /\.(webm|ogg|mp3|m4a)(\?|$)/i.test(c.attachment_url);
+                        if (isAudio) {
+                            return `<div style="margin-bottom: 6px; display: flex; align-items: center; gap: 6px;">
+                                <i class="fas fa-microphone" style="color: #d32f2f; font-size: 14px;"></i>
+                                <audio controls src="${url}" style="height: 32px; max-width: 220px;"></audio>
+                            </div>`;
+                        }
+                        return `<div style="margin-bottom: 6px;"><a href="${url}" target="_blank" rel="noopener noreferrer"><img src="${url}" style="max-width: 200px; max-height: 150px; border-radius: 6px; border: 1px solid var(--gray-300); cursor: pointer;" alt="attachment" /></a></div>`;
+                    })() : ''}
                     <div style="font-size: 14px; color: var(--gray-800); white-space: pre-wrap; word-break: break-word;">${escapeHtmlTickets(c.comment)}</div>
                     <div style="font-size: 11px; color: var(--gray-400); margin-top: 4px; text-align: right;">${escapeHtmlTickets(time)}</div>
                 </div>
@@ -826,11 +951,16 @@ async function viewTicketDetail(ticketId) {
                                 </div>
                             </div>
                         </div>
+                        <div id="ticket-voice-preview" style="display: none; margin-bottom: 8px;"></div>
                         <input type="file" id="ticket-attachment-input" accept="image/*" style="display: none;" onchange="previewTicketAttachment(this)" />
-                        <div style="display: flex; gap: 8px; padding-bottom: 4px;">
+                        <div style="display: flex; gap: 8px; padding-bottom: 4px; align-items: flex-end;">
                             <button class="btn btn-secondary" onclick="document.getElementById('ticket-attachment-input').click()" style="align-self: flex-end; height: 38px; padding: 0 10px;" title="Attach screenshot">
                                 <i class="fas fa-paperclip"></i>
                             </button>
+                            <button id="ticket-mic-btn" class="btn btn-secondary" onclick="startVoiceRecording()" style="height: 38px; padding: 0 10px;" title="Record voice note">
+                                <i class="fas fa-microphone"></i>
+                            </button>
+                            <span id="ticket-voice-timer" style="display: none; font-size: 12px; color: #d32f2f; font-weight: 700; align-self: center; min-width: 38px;">00:00</span>
                             <textarea id="ticket-comment-input" placeholder="Write a comment..." rows="2" maxlength="2000"
                                 style="flex: 1; padding: 8px 12px; border: 1px solid var(--gray-300); border-radius: 6px; resize: none; font-size: 14px;"
                                 onkeydown="if(event.key==='Enter'&&!event.shiftKey){event.preventDefault();addTicketComment('${escapeHtmlTickets(ticket.id)}');}"></textarea>
