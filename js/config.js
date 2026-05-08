@@ -5,7 +5,7 @@ const CONFIG = {
     // If running from file:// or no hostname, treat as local development
     API_BASE_URL: (window.location.protocol === 'file:' || window.location.hostname === '' || window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1')
         ? 'http://localhost:3000/api'
-        : 'https://your-backend-api.com/api',
+        : 'https://uowxtxsqtlyxjhnkyjho.supabase.co/rest/v1',
     TAX_RATE: 0.195,
     INVOICE_PREFIX: "CT",
     CURRENCY: "PKR ",
