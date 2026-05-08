@@ -49,12 +49,14 @@ async function setTicketLastViewed(ticketId) {
     // Update cache immediately for instant UI feedback
     window._ticketViewsCache[ticketId] = now;
     try {
-        const userId = await getAuthUserId();
+        const { data: sessionData } = await supabase.auth.getSession();
+        const userId = sessionData?.session?.user?.id || null;
+        const userEmail = sessionData?.session?.user?.email || null;
         if (!userId) return;
         await supabase
             .from('ticket_views')
             .upsert(
-                { user_id: userId, ticket_id: ticketId, viewed_at: now },
+                { user_id: userId, user_email: userEmail, ticket_id: ticketId, viewed_at: now },
                 { onConflict: 'user_id,ticket_id' }
             );
     } catch (e) {
