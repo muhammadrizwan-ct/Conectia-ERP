@@ -564,11 +564,53 @@ async function createTicket() {
     // Audit log: ticket create
     if (data && data[0]) {
         await logTicketAudit('create', data[0]);
+        // Send assignment email if ticket was assigned
+        if (data[0].assigned_to) {
+            sendTicketAssignmentEmail(data[0], 'create');
+        }
     }
 
     showNotification('Ticket created successfully', 'success');
     closeModal();
     loadTickets();
+}
+
+// --- Email Notification Helper ---
+async function sendTicketAssignmentEmail(ticket, action = 'create') {
+    if (!ticket.assigned_to) return; // no assignee, skip
+    try {
+        // Look up the assigned user's email from the users table
+        const { data: assignedUser } = await supabase
+            .from('users')
+            .select('email, fullname')
+            .eq('username', ticket.assigned_to)
+            .maybeSingle();
+        if (!assignedUser?.email) return; // no email found, skip silently
+
+        const assignedBy = Auth?.user?.fullname || Auth?.user?.username || Auth?.user?.email || null;
+        const SUPABASE_URL = CONFIG?.SUPABASE_URL || 'https://uowxtxsqtlyxjhnkyjho.supabase.co';
+        const { data: sessionData } = await supabase.auth.getSession();
+        const token = sessionData?.session?.access_token || '';
+
+        await fetch(`${SUPABASE_URL}/functions/v1/send-ticket-email`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${token}`,
+            },
+            body: JSON.stringify({
+                to_email: assignedUser.email,
+                to_name: assignedUser.fullname || ticket.assigned_to,
+                ticket_number: ticket.ticket_number,
+                ticket_title: ticket.title,
+                ticket_priority: ticket.priority,
+                assigned_by: assignedBy,
+                action,
+            }),
+        });
+    } catch (e) {
+        console.warn('Failed to send assignment email:', e);
+    }
 }
 
 // Fetch comments for a ticket
@@ -1127,6 +1169,10 @@ async function updateTicket(ticketId) {
             const oldAssign = oldTicket.assigned_to || 'Unassigned';
             const newAssign = assignedTo || 'Unassigned';
             changes.push(`Assigned to changed from ${oldAssign} to ${newAssign} by ${currentUser}`);
+            // Send email to newly assigned person
+            if (assignedTo && data && data[0]) {
+                sendTicketAssignmentEmail(data[0], 'reassign');
+            }
         }
     }
 
