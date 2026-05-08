@@ -1,3 +1,22 @@
+// --- Audit Log Helper ---
+async function logVehicleAudit(action, vehicleData) {
+    try {
+        const user = window.Auth?.user || {};
+        const displayName = user.fullname || user.username || user.email || null;
+        await supabase.from('activity_logs').insert([
+            {
+                user_id: user.id || null,
+                username: displayName,
+                action: action,
+                entity_type: 'vehicle',
+                entity_id: String(vehicleData?.registrationNo || vehicleData?.id || ''),
+                details: vehicleData || null
+            }
+        ]);
+    } catch (e) {
+        console.warn('Audit log failed:', e);
+    }
+}
 // --- Supabase Integration ---
 var supabase = window.supabaseClient;
 
@@ -994,7 +1013,10 @@ async function saveNewVehicle(event) {
     
     // Close modal
     document.getElementById('add-vehicle-modal').remove();
-    
+
+    // Audit log: vehicle create
+    await logVehicleAudit('create', savedVehicle);
+
     // Show success message
     showNotification('Vehicle added successfully! Saved to Supabase.', 'success');
 }
@@ -1281,7 +1303,7 @@ function updateEditFleetDropdown() {
     fleetSelect.required = true;
 }
 
-function saveEditedVehicle(event, vehicleId) {
+async function saveEditedVehicle(event, vehicleId) {
     event.preventDefault();
 
     if (!ensureDataActionPermission('edit')) {
@@ -1358,7 +1380,10 @@ function saveEditedVehicle(event, vehicleId) {
     
     // Close modal
     document.getElementById('edit-vehicle-modal').remove();
-    
+
+    // Audit log: vehicle update
+    await logVehicleAudit('update', window.allVehicles.find(v => toComparableVehicleId(v.id) === targetId) || {});
+
     // Show success message
     showNotification('Vehicle updated successfully!', 'success');
 }
@@ -1839,7 +1864,10 @@ async function archiveVehicle(vehicleId) {
     if (viewModal) {
         viewModal.remove();
     }
-    
+
+    // Audit log: vehicle archive
+    await logVehicleAudit('archive', vehicle);
+
     showNotification('Vehicle archived successfully!', 'success');
 }
 
@@ -1894,7 +1922,7 @@ function showArchivedVehiclesModal() {
     document.body.appendChild(modal);
 }
 
-function unarchiveVehicle(vehicleId) {
+async function unarchiveVehicle(vehicleId) {
     const targetId = toComparableVehicleId(vehicleId);
     const archived = window.archivedVehicles || [];
     const index = archived.findIndex(v => toComparableVehicleId(v.id) === targetId);
@@ -1918,7 +1946,10 @@ function unarchiveVehicle(vehicleId) {
         modal.remove();
         showArchivedVehiclesModal();
     }
-    
+
+    // Audit log: vehicle unarchive
+    await logVehicleAudit('unarchive', vehicle);
+
     showNotification('Vehicle unarchived successfully!', 'success');
 }
 
@@ -1964,7 +1995,10 @@ async function deleteVehicle(vehicleId) {
     if (viewModal) {
         viewModal.remove();
     }
-    
+
+    // Audit log: vehicle delete
+    await logVehicleAudit('delete', vehicle);
+
     showNotification('Vehicle deleted successfully!', 'success');
 }
 

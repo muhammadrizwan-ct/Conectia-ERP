@@ -1,3 +1,22 @@
+// --- Audit Log Helper ---
+async function logPaymentAudit(action, entityType, entityData) {
+    try {
+        const user = window.Auth?.user || {};
+        const displayName = user.fullname || user.username || user.email || null;
+        await supabase.from('activity_logs').insert([
+            {
+                user_id: user.id || null,
+                username: displayName,
+                action: action,
+                entity_type: entityType,
+                entity_id: String(entityData?.supabaseId || entityData?.id || ''),
+                details: entityData || null
+            }
+        ]);
+    } catch (e) {
+        console.warn('Audit log failed:', e);
+    }
+}
 // --- Supabase Integration ---
 var supabase = window.supabaseClient;
 
@@ -1731,6 +1750,10 @@ async function saveSalaryExpense(event) {
         }
     }
 
+    // Audit log: salary expense create/update
+    const auditPayload = expenseId ? window.allSalaryExpenses.find(i => String(i.id) === String(expenseId)) : { ...payload };
+    await logPaymentAudit(expenseId ? 'update' : 'create', 'salary_expense', auditPayload || payload);
+
     if (window.lastSalaryExpenseSaveError) {
         showNotification(`Salary expense ${expenseId ? 'updated' : 'saved'} locally. Supabase sync pending.`, 'warning');
     } else {
@@ -1919,6 +1942,9 @@ async function deleteSalaryExpense(expenseId) {
     if (window.paymentActiveTab === 'expenses' && contentEl) {
         renderSalaryExpensesTab(contentEl);
     }
+
+    // Audit log: salary expense delete
+    await logPaymentAudit('delete', 'salary_expense', expense);
 
     showNotification('Salary expense deleted successfully', 'success');
 }
@@ -2217,6 +2243,10 @@ async function saveDailyExpense(event) {
         renderDailyExpensesTab(contentEl);
     }
 
+    // Audit log: daily expense create/update
+    const auditDailyPayload = expenseId ? window.allDailyExpenses.find(i => String(i.id) === String(expenseId)) : { ...payload };
+    await logPaymentAudit(expenseId ? 'update' : 'create', 'daily_expense', auditDailyPayload || payload);
+
     if (window.lastDailyExpenseSaveError) {
         showNotification(`Daily expense ${expenseId ? 'updated' : 'saved'} locally. Supabase sync pending.`, 'warning');
     } else {
@@ -2266,6 +2296,9 @@ async function deleteDailyExpense(expenseId) {
     if (window.paymentActiveTab === 'expenses' && contentEl) {
         renderDailyExpensesTab(contentEl);
     }
+
+    // Audit log: daily expense delete
+    await logPaymentAudit('delete', 'daily_expense', expense);
 
     showNotification('Daily expense deleted successfully', 'success');
 }
