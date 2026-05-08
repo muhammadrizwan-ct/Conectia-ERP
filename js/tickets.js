@@ -1,25 +1,69 @@
 // Global variable to track the dot auto-hide timer
 let ticketDotAutoHideTimer = null;
-// --- Per-Ticket Last Viewed Tracking ---
-const TICKETS_LAST_VIEWED_KEY = 'vts_tickets_last_viewed';
+// --- Per-Ticket Last Viewed Tracking (DB-backed, per-user) ---
+// In-memory cache loaded from Supabase on each tickets page load.
+// Falls back to epoch if not found (shows dot), which is correct first-time behaviour.
+window._ticketViewsCache = window._ticketViewsCache || {};
 
-function getTicketsLastViewed() {
+/**
+ * Returns the Supabase auth.users UUID for the current session.
+ * Auth.user.id may be the app users table PK (not the auth UUID),
+ * so we always read it directly from the active Supabase session.
+ */
+async function getAuthUserId() {
     try {
-        return JSON.parse(localStorage.getItem(TICKETS_LAST_VIEWED_KEY) || '{}');
-    } catch {
-        return {};
+        const { data } = await supabase.auth.getSession();
+        return data?.session?.user?.id || null;
+    } catch (e) {
+        return null;
     }
 }
 
-function setTicketLastViewed(ticketId) {
-    const viewed = getTicketsLastViewed();
-    viewed[ticketId] = new Date().toISOString();
-    localStorage.setItem(TICKETS_LAST_VIEWED_KEY, JSON.stringify(viewed));
+/**
+ * Load all ticket_views rows for the current user from Supabase
+ * and populate the in-memory cache.  Called once in loadTickets().
+ */
+async function loadTicketViewsFromDB() {
+    try {
+        const userId = await getAuthUserId();
+        if (!userId) return;
+        const { data, error } = await supabase
+            .from('ticket_views')
+            .select('ticket_id, viewed_at')
+            .eq('user_id', userId);
+        if (error) { console.warn('ticket_views fetch error:', error); return; }
+        const cache = {};
+        (data || []).forEach(row => { cache[row.ticket_id] = row.viewed_at; });
+        window._ticketViewsCache = cache;
+    } catch (e) {
+        console.warn('loadTicketViewsFromDB error:', e);
+    }
+}
+
+/**
+ * Upsert a viewed_at record for the current user + ticketId in Supabase,
+ * and update the in-memory cache immediately so the dot vanishes at once.
+ */
+async function setTicketLastViewed(ticketId) {
+    const now = new Date().toISOString();
+    // Update cache immediately for instant UI feedback
+    window._ticketViewsCache[ticketId] = now;
+    try {
+        const userId = await getAuthUserId();
+        if (!userId) return;
+        await supabase
+            .from('ticket_views')
+            .upsert(
+                { user_id: userId, ticket_id: ticketId, viewed_at: now },
+                { onConflict: 'user_id,ticket_id' }
+            );
+    } catch (e) {
+        console.warn('setTicketLastViewed DB error:', e);
+    }
 }
 
 function getTicketLastViewed(ticketId) {
-    const viewed = getTicketsLastViewed();
-    return viewed[ticketId] || '1970-01-01T00:00:00Z';
+    return window._ticketViewsCache[ticketId] || '1970-01-01T00:00:00Z';
 }
 // --- Audit Log Helper ---
 async function logTicketAudit(action, ticketData) {
@@ -324,6 +368,8 @@ async function loadTickets() {
     `;
 
     window._allTickets = await fetchTickets();
+    // Load per-user viewed timestamps from DB before rendering so dots are accurate
+    await loadTicketViewsFromDB();
     renderTicketsTable(window._allTickets);
     // Auto-hide the red dot after 20 seconds when opening the Tickets page
     setupTicketsPageDotAutoHide();
@@ -714,8 +760,8 @@ async function viewTicketDetail(ticketId) {
     const tickets = window._allTickets || [];
     const ticket = tickets.find(t => t.id === ticketId);
     if (!ticket) return;
-    // Mark this ticket as viewed now
-    setTicketLastViewed(ticketId);
+    // Mark this ticket as viewed now (persists to DB so dots don't return after re-login)
+    await setTicketLastViewed(ticketId);
 
     const statusCfg = TICKET_STATUSES[ticket.status] || TICKET_STATUSES.open;
     const priorityCfg = TICKET_PRIORITIES[ticket.priority] || TICKET_PRIORITIES.medium;
