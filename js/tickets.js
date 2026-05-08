@@ -945,7 +945,7 @@ async function viewTicketDetail(ticketId) {
 
     const modalHTML = `
         <div class="modal-overlay" onclick="closeModal()">
-            <div class="modal-content" onclick="event.stopPropagation()" style="max-width: 620px; max-height: 90vh; display: flex; flex-direction: column; overflow: hidden;">
+            <div class="modal-content" onclick="event.stopPropagation()" style="max-width: 820px; max-height: 95vh; display: flex; flex-direction: column; overflow: hidden;">
                 <div class="modal-header" style="flex-shrink: 0;">
                     <h3><i class="fas fa-ticket-alt" style="margin-right: 8px;"></i>${escapeHtmlTickets(ticket.ticket_number)}</h3>
                     <button class="modal-close" onclick="closeModal()">×</button>
@@ -983,7 +983,7 @@ async function viewTicketDetail(ticketId) {
                     <!-- Comments Section -->
                     <div style="border-top: 1px solid var(--gray-200); padding-top: 14px;">
                         <h4 style="margin-bottom: 10px; font-size: 15px;"><i class="fas fa-comments" style="margin-right: 6px; color: var(--gray-500);"></i>Comments</h4>
-                        <div id="ticket-comments-list" style="max-height: 250px; overflow-y: auto; margin-bottom: 12px; padding: 4px;">
+                        <div id="ticket-comments-list" style="max-height: 420px; overflow-y: auto; margin-bottom: 12px; padding: 4px;">
                             ${commentsHTML}
                         </div>
                         <div id="ticket-attachment-preview" style="display: none; margin-bottom: 8px; background: var(--gray-50); border: 1px solid var(--gray-300); border-radius: 8px; padding: 8px; width: fit-content;">
