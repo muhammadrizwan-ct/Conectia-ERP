@@ -1,3 +1,22 @@
+// --- Audit Log Helper ---
+async function logUserAudit(action, userData) {
+    try {
+        const user = window.Auth?.user || {};
+        const displayName = user.fullname || user.username || user.email || null;
+        await supabase.from('activity_logs').insert([
+            {
+                user_id: user.id || null,
+                username: displayName,
+                action: action,
+                entity_type: 'user',
+                entity_id: String(userData?.username || userData?.id || ''),
+                details: userData || null
+            }
+        ]);
+    } catch (e) {
+        console.warn('Audit log failed:', e);
+    }
+}
 // --- Supabase Integration ---
 var supabase = window.supabaseClient;
 
@@ -71,7 +90,11 @@ async function saveUserToSupabase(user) {
         console.error('Supabase insert error:', error);
         return { error };
     }
-    return data && data[0] ? data[0] : { success: true };
+    if (data && data[0]) {
+        await logUserAudit('create', data[0]);
+        return data[0];
+    }
+    return { success: true };
 }
 
 // Update an existing user in Supabase by username
@@ -91,11 +114,23 @@ async function updateUserInSupabase(username, updates) {
         console.warn('[updateUserInSupabase] No rows updated — RLS may be blocking or username not found');
         return { error: { message: 'No rows updated. You may not have permission (RLS) or user not found.' } };
     }
+    await logUserAudit('update', data[0]);
     return data[0];
 }
 
 // Delete a user from Supabase by username
 async function deleteUserFromSupabase(username) {
+    // Fetch user before delete for audit
+    let userToDelete = null;
+    try {
+        const { data } = await supabase
+            .from('users')
+            .select('*')
+            .eq('username', username)
+            .maybeSingle();
+        userToDelete = data;
+    } catch (e) {}
+
     const { error } = await supabase
         .from('users')
         .delete()
@@ -103,6 +138,9 @@ async function deleteUserFromSupabase(username) {
     if (error) {
         console.error('Supabase delete error:', error);
         return { error };
+    }
+    if (userToDelete) {
+        await logUserAudit('delete', userToDelete);
     }
     return { success: true };
 }

@@ -2,9 +2,12 @@
 async function logActivity({ userId, action, entityType, entityId, details = {} }) {
     if (!supabase || !userId || !action || !entityType || !entityId) return;
     try {
+        const user = window.Auth?.user || {};
+        const displayName = user.fullname || user.username || user.email || null;
         await supabase.from('activity_logs').insert([
             {
                 user_id: userId,
+                username: displayName,
                 action,
                 entity_type: entityType,
                 entity_id: entityId,

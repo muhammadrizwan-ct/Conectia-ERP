@@ -61,20 +61,32 @@ async function fetchUsersFromSupabase() {
 
 // Fetch all audit logs from Supabase
 async function fetchAuditLogsFromSupabase() {
-    const { data, error } = await supabase
-        .from('activity_logs')
-        .select('*')
-        .order('created_at', { ascending: false });
-    if (error) {
-        console.error('Supabase fetch error:', error);
+    const [logsResult, usersResult] = await Promise.all([
+        supabase
+            .from('activity_logs')
+            .select('*')
+            .order('created_at', { ascending: false }),
+        supabase
+            .from('users')
+            .select('id, username, fullname, email')
+    ]);
+    if (logsResult.error) {
+        console.error('Supabase fetch error:', logsResult.error);
         return [];
     }
+    // Build a user lookup map: users table id → display name
+    const userMap = {};
+    (usersResult.data || []).forEach(u => {
+        userMap[u.id] = u.fullname || u.username || u.email || null;
+    });
     // Map fields for display compatibility
-    return (data || []).map(log => ({
+    return (logsResult.data || []).map(log => ({
         timestamp: log.created_at,
-        performedBy: log.username || log.user_id || 'System',
+        performedBy: log.username && log.username !== 'unknown'
+            ? log.username
+            : (userMap[log.user_id] || log.user_id || 'System'),
         action: log.action,
-        details: log.details,
+        details: typeof log.details === 'string' ? log.details : JSON.stringify(log.details || ''),
     }));
 }
 // Admin Module
@@ -144,10 +156,13 @@ async function loadAdmin() {
     
     try {
         try {
-            const users = await Promise.race([
+            const usersResponse = await Promise.race([
                 API.getUsers(),
                 new Promise((_, reject) => setTimeout(() => reject(new Error('timeout')), 2000))
             ]);
+            const users = Array.isArray(usersResponse)
+                ? usersResponse
+                : (Array.isArray(usersResponse?.users) ? usersResponse.users : []);
             displayUsersTable(users);
         } catch (e) {
             displayUsersTable(loadAdminUsersFromStorage());

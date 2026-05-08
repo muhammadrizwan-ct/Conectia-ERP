@@ -2,16 +2,30 @@
 async function logClientAudit(action, clientData) {
     try {
         const user = (window.Auth && window.Auth.user) || {};
+        if (!user.id) {
+            if (typeof showNotification === 'function') {
+                showNotification('Audit log failed: No authenticated user found. Audit entry not recorded.', 'error');
+            } else {
+                alert('Audit log failed: No authenticated user found. Audit entry not recorded.');
+            }
+            console.warn('Audit log failed: No authenticated user found. Audit entry not recorded.');
+            return;
+        }
+        const displayName = user.fullname || user.username || user.email || null;
         await supabase.from('activity_logs').insert([
             {
-                user_id: user.id || null,
-                action: action, // 'create', 'update', 'delete'
+                user_id: user.id,
+                username: displayName,
+                action: action,
                 entity_type: 'client',
-                entity_id: clientData?.clientId || clientData?.clientid || clientData?.id || null,
+                entity_id: String(clientData?.clientId || clientData?.clientid || clientData?.id || ''),
                 details: clientData || null
             }
         ]);
     } catch (e) {
+        if (typeof showNotification === 'function') {
+            showNotification('Audit log failed: ' + (e.message || e), 'error');
+        }
         console.warn('Audit log failed:', e);
     }
 }
@@ -983,7 +997,8 @@ async function saveNewClient(event) {
         balance: 0
     };
 
-    const savedClient = await saveClientsToStorage(newClientPayload);
+    // Save to Supabase and log audit
+    const savedClient = await saveClientToSupabase(newClientPayload);
     if (!savedClient) {
         const errorDetails = window.lastClientSaveError?.message || 'Unknown database error';
         showNotification(`Client not saved to Supabase: ${errorDetails}`, 'error');

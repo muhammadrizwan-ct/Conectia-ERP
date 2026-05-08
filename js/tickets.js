@@ -68,15 +68,16 @@ function getTicketLastViewed(ticketId) {
 // --- Audit Log Helper ---
 async function logTicketAudit(action, ticketData) {
     try {
-        const user = (window.Auth && window.Auth.user) || {};
+        const user = window.Auth?.user || {};
+        const displayName = user.fullname || user.username || user.email || null;
         await supabase.from('activity_logs').insert([
             {
                 user_id: user.id || null,
-                username: user.username || user.email || 'unknown',
-                action: action, // 'create', 'update', 'delete'
-                entity: 'ticket',
-                entity_id: ticketData?.id || ticketData?.ticket_number || null,
-                details: ticketData ? JSON.stringify(ticketData) : null
+                username: displayName,
+                action: action,
+                entity_type: 'ticket',
+                entity_id: String(ticketData?.ticket_number || ticketData?.id || ''),
+                details: ticketData || null
             }
         ]);
     } catch (e) {
