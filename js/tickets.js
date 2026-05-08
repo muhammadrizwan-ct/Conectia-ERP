@@ -786,8 +786,9 @@ async function addTicketComment(ticketId) {
         showNotification('Screenshot uploaded successfully', 'success');
     }
 
-    const currentUser = Auth?.user?.username || Auth?.user?.email || 'Unknown';
-    const currentUserId = Auth?.user?.id || '';
+    const currentUser = Auth?.user?.fullname || Auth?.user?.username || Auth?.user?.email || 'Unknown';
+    const { data: sessionData } = await supabase.auth.getSession();
+    const currentUserId = sessionData?.session?.user?.id || Auth?.user?.id || '';
 
     const insertData = {
         ticket_id: ticketId,
@@ -1131,10 +1132,14 @@ async function updateTicket(ticketId) {
 
     // Insert system comments for each change
     if (changes.length > 0) {
+        const updater = Auth?.user?.fullname || Auth?.user?.username || Auth?.user?.email || 'Unknown';
+        const { data: updaterSession } = await supabase.auth.getSession();
+        const updaterId = updaterSession?.session?.user?.id || Auth?.user?.id || null;
         const systemComments = changes.map(c => ({
             ticket_id: ticketId,
             comment: c,
-            created_by: 'System'
+            created_by: updater,
+            created_by_id: updaterId
         }));
         await supabase.from('ticket_comments').insert(systemComments);
     }
