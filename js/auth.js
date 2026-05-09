@@ -23,6 +23,10 @@ class AuthService {
             this.user = await this.resolveSessionUser(data.session);
             this.applyUserPermissions();
             this.saveUser();
+            // Restore existing session start (don't reset on page reload)
+            if (!localStorage.getItem(STORAGE_KEYS.SESSION_START)) {
+                localStorage.setItem(STORAGE_KEYS.SESSION_START, new Date().toISOString());
+            }
         } catch (error) {
             console.error('Auth init failed:', error);
             this.clearAuth();
@@ -94,6 +98,8 @@ class AuthService {
 
             this.applyUserPermissions();
             this.saveUser();
+            // Record session start time for 12-hour auto-logout
+            localStorage.setItem(STORAGE_KEYS.SESSION_START, new Date().toISOString());
             return { success: true, user: this.user };
         } catch (error) {
             return { success: false, message: 'Authentication service unavailable. Please try again.' };
@@ -213,6 +219,7 @@ class AuthService {
         this.permissions = null;
         API.clearToken();
         localStorage.removeItem(STORAGE_KEYS.USER);
+        localStorage.removeItem(STORAGE_KEYS.SESSION_START);
     }
 
     async resolveSessionUser(session) {
@@ -787,6 +794,28 @@ async function logout() {
         await Auth.logout();
     }
 }
+
+// --- 12-Hour Session Expiry ---
+const SESSION_MAX_MS = 12 * 60 * 60 * 1000; // 12 hours in milliseconds
+
+function checkSessionExpiry() {
+    if (!Auth?.isLoggedIn?.()) return;
+    const sessionStart = localStorage.getItem(STORAGE_KEYS.SESSION_START);
+    if (!sessionStart) return;
+    const elapsed = Date.now() - new Date(sessionStart).getTime();
+    if (elapsed >= SESSION_MAX_MS) {
+        // Show a brief message then force logout
+        if (typeof showNotification === 'function') {
+            showNotification('Your session has expired. Please log in again.', 'error');
+        }
+        setTimeout(() => Auth.logout(), 1500);
+    }
+}
+
+// Check every 5 minutes
+setInterval(checkSessionExpiry, 5 * 60 * 1000);
+// Also check once shortly after page load
+setTimeout(checkSessionExpiry, 3000);
 
 window.ensureDataActionPermission = ensureDataActionPermission;
 window.ensureFeaturePermission = ensureFeaturePermission;

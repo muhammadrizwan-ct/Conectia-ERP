@@ -37,7 +37,8 @@ const STORAGE_KEYS = {
     VENDORS: 'vts_vendors',
     VENDOR_PAYMENTS: 'vts_vendor_payments',
     ARCHIVED_VEHICLES: 'vts_archived_vehicles',
-    DATA_RESET_VERSION: 'vts_data_reset_version'
+    DATA_RESET_VERSION: 'vts_data_reset_version',
+    SESSION_START: 'vts_session_start'
 };
 
 const DATA_RESET_VERSION = '2026-02-20-01';
