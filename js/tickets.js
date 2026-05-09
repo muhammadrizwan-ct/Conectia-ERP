@@ -1231,11 +1231,20 @@ async function syncTicketsLastSeenFromDB() {
             .select('tickets_last_seen_at')
             .eq('id', userId)
             .single();
-        if (!error && data?.tickets_last_seen_at) {
-            // Only update localStorage if DB value is newer than what's stored
-            const stored = localStorage.getItem(TICKETS_LAST_SEEN_KEY) || '1970-01-01T00:00:00Z';
-            if (new Date(data.tickets_last_seen_at) > new Date(stored)) {
-                localStorage.setItem(TICKETS_LAST_SEEN_KEY, data.tickets_last_seen_at);
+        if (!error && data) {
+            if (data.tickets_last_seen_at) {
+                // Only update localStorage if DB value is newer than what's stored
+                const stored = localStorage.getItem(TICKETS_LAST_SEEN_KEY) || '1970-01-01T00:00:00Z';
+                if (new Date(data.tickets_last_seen_at) > new Date(stored)) {
+                    localStorage.setItem(TICKETS_LAST_SEEN_KEY, data.tickets_last_seen_at);
+                }
+            }
+            // If DB has no timestamp yet, persist "now" to DB so future logins are correct.
+            // This handles first-time users or users whose DB column was never populated.
+            if (!data.tickets_last_seen_at && !localStorage.getItem(TICKETS_LAST_SEEN_KEY)) {
+                const now = new Date().toISOString();
+                localStorage.setItem(TICKETS_LAST_SEEN_KEY, now);
+                supabase.from('users').update({ tickets_last_seen_at: now }).eq('id', userId).then();
             }
         }
     } catch (e) {
@@ -1260,8 +1269,21 @@ async function checkTicketUpdates() {
     try {
         // If localStorage was cleared (e.g. after logout), sync from DB first so we
         // don't incorrectly compare against epoch and show the badge for all old tickets.
-        if (!localStorage.getItem(TICKETS_LAST_SEEN_KEY) && Auth?.isLoggedIn?.()) {
-            await syncTicketsLastSeenFromDB();
+        if (!localStorage.getItem(TICKETS_LAST_SEEN_KEY)) {
+            if (Auth?.isLoggedIn?.()) {
+                await syncTicketsLastSeenFromDB();
+            }
+            // If still empty after DB sync (tickets_last_seen_at is null in DB, user
+            // not ready yet, or DB query failed), use "now" as the baseline and hide
+            // the badge. This prevents false positives where ALL historical tickets
+            // appear as new after every login.
+            if (!localStorage.getItem(TICKETS_LAST_SEEN_KEY)) {
+                if (Auth?.isLoggedIn?.()) {
+                    localStorage.setItem(TICKETS_LAST_SEEN_KEY, new Date().toISOString());
+                }
+                updateTicketsBadge(0);
+                return;
+            }
         }
         const lastSeen = getTicketsLastSeen();
 
