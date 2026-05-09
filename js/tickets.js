@@ -1258,6 +1258,11 @@ function updateTicketsBadge(count) {
 
 async function checkTicketUpdates() {
     try {
+        // If localStorage was cleared (e.g. after logout), sync from DB first so we
+        // don't incorrectly compare against epoch and show the badge for all old tickets.
+        if (!localStorage.getItem(TICKETS_LAST_SEEN_KEY) && Auth?.isLoggedIn?.()) {
+            await syncTicketsLastSeenFromDB();
+        }
         const lastSeen = getTicketsLastSeen();
 
         // Count tickets updated since last seen

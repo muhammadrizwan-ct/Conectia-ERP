@@ -680,6 +680,35 @@ function renderVendorsTab(contentEl) {
     }
     window.allVendors = vendors;
     displayVendorsTable(vendors);
+
+    // Sync with Supabase in background
+    (async () => {
+        try {
+            if (typeof syncUnsyncedVendorsToSupabase === 'function') {
+                const synced = await syncUnsyncedVendorsToSupabase(window.allVendors || []);
+                if (Array.isArray(synced) && synced.length > 0) {
+                    window.allVendors = synced;
+                    if (typeof saveVendorsToStorage === 'function') saveVendorsToStorage();
+                }
+            }
+
+            if (typeof fetchVendorsFromSupabase === 'function') {
+                const cloud = await fetchVendorsFromSupabase();
+                if (Array.isArray(cloud) && cloud.length > 0) {
+                    const merged = typeof mergeVendorsByKey === 'function'
+                        ? mergeVendorsByKey(window.allVendors || [], cloud)
+                        : cloud;
+                    window.allVendors = merged;
+                    if (typeof saveVendorsToStorage === 'function') saveVendorsToStorage();
+                    if (window.clientActiveTab === 'vendors') {
+                        displayVendorsTable(window.allVendors);
+                    }
+                }
+            }
+        } catch (err) {
+            console.error('Failed to sync vendors with Supabase:', err);
+        }
+    })();
 }
 
 function displayClientsTable(clients) {
@@ -1418,7 +1447,7 @@ function updateVendor(event, vendorId) {
     const vendorIndex = vendors.findIndex(v => v.id === vendorId);
     if (vendorIndex !== -1) {
         vendors[vendorIndex] = {
-            ...vendors[vendorIndex],
+            ...vendors[vendorIndex],  // preserves supabaseId, vendorId, id
             name,
             email,
             phone,
@@ -1436,6 +1465,24 @@ function updateVendor(event, vendorId) {
 
     document.getElementById('edit-vendor-modal').remove();
     showNotification('Vendor updated successfully!', 'success');
+
+    // Sync update to Supabase in background
+    const updatedVendor = vendors[vendorIndex];
+    if (updatedVendor && typeof saveVendorToSupabase === 'function') {
+        (async () => {
+            try {
+                const saved = await saveVendorToSupabase(updatedVendor);
+                if (saved && typeof saved === 'object') {
+                    window.allVendors = (window.allVendors || []).map((v) =>
+                        String(v.id) === String(updatedVendor.id) ? saved : v
+                    );
+                    if (typeof saveVendorsToStorage === 'function') saveVendorsToStorage();
+                }
+            } catch (err) {
+                console.error('Failed to sync vendor update to Supabase:', err);
+            }
+        })();
+    }
 }
 
 function deleteVendor(vendorId) {
@@ -1487,6 +1534,7 @@ function confirmDeleteVendor(vendorId) {
         return;
     }
 
+    const vendorToDelete = (window.allVendors || []).find((v) => v.id === vendorId);
     window.allVendors = (window.allVendors || []).filter(v => v.id !== vendorId);
     if (typeof saveVendorsToStorage === 'function') {
         saveVendorsToStorage();
@@ -1495,6 +1543,17 @@ function confirmDeleteVendor(vendorId) {
     displayVendorsTable(window.allVendors);
     document.getElementById('delete-vendor-modal').remove();
     showNotification('Vendor deleted successfully!', 'success');
+
+    // Sync delete to Supabase in background
+    if (vendorToDelete && typeof deleteVendorFromSupabase === 'function') {
+        (async () => {
+            try {
+                await deleteVendorFromSupabase(vendorToDelete);
+            } catch (err) {
+                console.error('Failed to sync vendor delete to Supabase:', err);
+            }
+        })();
+    }
 }
 // Vehicle Fleet/Department Management Modal (Per Client)
 function showCategoryManagementModal(clientName) {

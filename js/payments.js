@@ -2971,6 +2971,189 @@ function mergePaymentsWithStorage(apiPayments) {
     return mergePaymentsByKey(saved, filteredApi);
 }
 
+// --- Vendor Supabase CRUD ---
+
+function normalizeVendorRecord(record = {}) {
+    return {
+        ...record,
+        id: record.id || Date.now(),
+        supabaseId: String(record.supabaseId || record.supabase_id || (isUuidValue(record.id) ? record.id : '') || '').trim(),
+        vendorId: String(record.vendorId || record.vendor_id || '').trim(),
+        name: String(record.name || '').trim(),
+        email: String(record.email || '').trim(),
+        phone: String(record.phone || '').trim(),
+        address: String(record.address || '').trim(),
+        ntn: String(record.ntn || '').trim(),
+        status: String(record.status || 'Active').trim() || 'Active'
+    };
+}
+
+function mergeVendorsByKey(...groups) {
+    const byKey = new Map();
+
+    groups.flat().forEach((vendor) => {
+        if (!vendor || typeof vendor !== 'object') return;
+        const normalized = normalizeVendorRecord(vendor);
+        const cloudId = String(normalized.supabaseId || (isUuidValue(normalized.id) ? normalized.id : '') || '').trim();
+        const fallbackKey = String(normalized.name || '').trim().toLowerCase();
+        const key = cloudId ? `cloud:${cloudId}` : (fallbackKey ? `name:${fallbackKey}` : null);
+        if (!key) return;
+
+        if (!byKey.has(key)) {
+            byKey.set(key, normalized);
+            return;
+        }
+
+        byKey.set(key, {
+            ...byKey.get(key),
+            ...normalized,
+            id: normalized.id || byKey.get(key).id,
+            supabaseId: normalized.supabaseId || byKey.get(key).supabaseId
+        });
+    });
+
+    return Array.from(byKey.values()).sort((a, b) => String(a.name).localeCompare(String(b.name)));
+}
+
+async function fetchVendorsFromSupabase() {
+    const SUPA_URL = 'https://uowxtxsqtlyxjhnkyjho.supabase.co';
+    const SUPA_KEY = (typeof CONFIG !== 'undefined' && CONFIG.SUPABASE_ANON_KEY) ? CONFIG.SUPABASE_ANON_KEY : 'sb_publishable_Pe_Cs-YEpVY094yeziSsRw_jic4DhRS';
+    try {
+        const r = await fetch(`${SUPA_URL}/rest/v1/vendors?select=*&order=created_at.asc`, {
+            headers: { 'apikey': SUPA_KEY, 'Authorization': 'Bearer ' + SUPA_KEY }
+        });
+        if (!r.ok) return [];
+        const d = await r.json();
+        return (Array.isArray(d) ? d : []).map(normalizeVendorRecord);
+    } catch (err) {
+        console.error('Vendors fetch error:', err);
+        return [];
+    }
+}
+
+async function saveVendorToSupabase(vendor) {
+    if (!vendor || typeof vendor !== 'object') return null;
+
+    const SUPA_URL = 'https://uowxtxsqtlyxjhnkyjho.supabase.co';
+    const SUPA_KEY = (typeof CONFIG !== 'undefined' && CONFIG.SUPABASE_ANON_KEY) ? CONFIG.SUPABASE_ANON_KEY : 'sb_publishable_Pe_Cs-YEpVY094yeziSsRw_jic4DhRS';
+    const headers = {
+        'Content-Type': 'application/json',
+        'apikey': SUPA_KEY,
+        'Authorization': 'Bearer ' + SUPA_KEY,
+        'Prefer': 'return=representation'
+    };
+
+    const item = normalizeVendorRecord(vendor);
+    console.log('[Vendor] saveVendorToSupabase called for:', item.name, '| vendorId:', item.vendorId, '| supabaseId:', item.supabaseId);
+    const insertPayload = {
+        vendor_id: item.vendorId || null,
+        name: item.name,
+        email: item.email || null,
+        phone: item.phone || null,
+        address: item.address || null,
+        ntn: item.ntn || null,
+        status: item.status
+    };
+
+    // Determine cloud UUID: prefer supabaseId, then item.id if it's a UUID
+    const cloudId = String(item.supabaseId || (isUuidValue(item.id) ? item.id : '') || '').trim();
+
+    try {
+        if (isUuidValue(cloudId)) {
+            // UPDATE existing row by UUID
+            const updatePayload = { ...insertPayload, updated_at: new Date().toISOString() };
+            const r = await fetch(`${SUPA_URL}/rest/v1/vendors?id=eq.${cloudId}`, {
+                method: 'PATCH', headers, body: JSON.stringify(updatePayload)
+            });
+            if (!r.ok) {
+                const errBody = await r.text();
+                console.error('Supabase vendor update error:', r.status, errBody);
+                window.lastVendorSaveError = { message: errBody, status: r.status };
+                return null;
+            }
+            const d = await r.json();
+            window.lastVendorSaveError = null;
+            const result = Array.isArray(d) ? d[0] : d;
+            return result ? normalizeVendorRecord(result) : null;
+        }
+
+        // No UUID — check if a row with this vendor_id already exists to avoid duplicates
+        if (item.vendorId) {
+            const checkR = await fetch(`${SUPA_URL}/rest/v1/vendors?vendor_id=eq.${encodeURIComponent(item.vendorId)}&select=id`, {
+                headers: { 'apikey': SUPA_KEY, 'Authorization': 'Bearer ' + SUPA_KEY }
+            });
+            if (checkR.ok) {
+                const existing = await checkR.json();
+                if (Array.isArray(existing) && existing.length > 0) {
+                    const existingId = existing[0].id;
+                    const updatePayload = { ...insertPayload, updated_at: new Date().toISOString() };
+                    const r2 = await fetch(`${SUPA_URL}/rest/v1/vendors?id=eq.${existingId}`, {
+                        method: 'PATCH', headers, body: JSON.stringify(updatePayload)
+                    });
+                    const d2 = await r2.json();
+                    window.lastVendorSaveError = null;
+                    const result = Array.isArray(d2) ? d2[0] : d2;
+                    return result ? normalizeVendorRecord(result) : null;
+                }
+            }
+        }
+
+        // INSERT new row
+        const r = await fetch(`${SUPA_URL}/rest/v1/vendors`, {
+            method: 'POST', headers, body: JSON.stringify(insertPayload)
+        });
+        if (!r.ok) {
+            const errBody = await r.text();
+            console.error('Supabase vendor insert error:', r.status, errBody);
+            window.lastVendorSaveError = { message: errBody, status: r.status };
+            return null;
+        }
+        const d = await r.json();
+        window.lastVendorSaveError = null;
+        return normalizeVendorRecord(Array.isArray(d) ? d[0] : d);
+    } catch (err) {
+        console.error('Supabase vendor save error:', err);
+        window.lastVendorSaveError = err;
+        return null;
+    }
+}
+
+async function deleteVendorFromSupabase(vendor) {
+    const item = normalizeVendorRecord(vendor || {});
+    const cloudId = String(item.supabaseId || (isUuidValue(item.id) ? item.id : '') || '').trim();
+    if (!isUuidValue(cloudId)) return true;
+
+    const SUPA_URL = 'https://uowxtxsqtlyxjhnkyjho.supabase.co';
+    const SUPA_KEY = (typeof CONFIG !== 'undefined' && CONFIG.SUPABASE_ANON_KEY) ? CONFIG.SUPABASE_ANON_KEY : 'sb_publishable_Pe_Cs-YEpVY094yeziSsRw_jic4DhRS';
+    try {
+        await fetch(`${SUPA_URL}/rest/v1/vendors?id=eq.${cloudId}`, {
+            method: 'DELETE',
+            headers: { 'apikey': SUPA_KEY, 'Authorization': 'Bearer ' + SUPA_KEY }
+        });
+        return true;
+    } catch (err) {
+        console.error('Supabase vendor delete error:', err);
+        return false;
+    }
+}
+
+async function syncUnsyncedVendorsToSupabase(vendors = []) {
+    const source = (Array.isArray(vendors) ? vendors : []).map(normalizeVendorRecord);
+    const synced = [];
+    for (const item of source) {
+        const cloudId = String(item.supabaseId || (isUuidValue(item.id) ? item.id : '') || '').trim();
+        if (isUuidValue(cloudId)) {
+            synced.push(item);
+            continue;
+        }
+        const saved = await saveVendorToSupabase(item);
+        synced.push(saved && typeof saved === 'object' ? saved : item);
+    }
+    return mergeVendorsByKey(synced);
+}
+
+// --- End Vendor Supabase CRUD ---
+
 function saveVendorsToStorage() {
     try {
         localStorage.setItem(STORAGE_KEYS.VENDORS, JSON.stringify(window.allVendors || []));
@@ -4033,9 +4216,30 @@ function saveNewVendor(event) {
     saveVendorsToStorage();
 
     populateVendorDropdown(vendors);
+    if (typeof displayVendorsTable === 'function') displayVendorsTable(window.allVendors);
 
     document.getElementById('add-vendor-modal').remove();
     showNotification('Vendor added successfully!', 'success');
+
+    // Sync to Supabase — awaited so it completes before anything else
+    saveVendorToSupabase(newVendor).then(function(saved) {
+        if (saved && typeof saved === 'object') {
+            console.log('[Vendor] Saved to Supabase OK:', saved);
+            window.allVendors = (window.allVendors || []).map(function(v) {
+                return String(v.id) === String(newVendor.id) ? saved : v;
+            });
+            saveVendorsToStorage();
+        } else {
+            const errMsg = window.lastVendorSaveError
+                ? (window.lastVendorSaveError.message || JSON.stringify(window.lastVendorSaveError))
+                : 'Unknown error';
+            console.error('[Vendor] NOT saved to Supabase:', errMsg);
+            showNotification('Vendor saved locally but NOT in cloud: ' + errMsg, 'warning');
+        }
+    }).catch(function(err) {
+        console.error('[Vendor] Supabase sync error:', err);
+        showNotification('Vendor saved locally but NOT in cloud: ' + err.message, 'warning');
+    });
 }
 
 function showRecordVendorPaymentModal() {
@@ -4883,6 +5087,43 @@ window.deleteVendorPayment = deleteVendorPayment;
 window.deleteVendorPaymentFromModal = deleteVendorPaymentFromModal;
 window.saveVendorsToStorage = saveVendorsToStorage;
 window.loadVendorsFromStorage = loadVendorsFromStorage;
+window.saveVendorToSupabase = saveVendorToSupabase;
+window.deleteVendorFromSupabase = deleteVendorFromSupabase;
+window.fetchVendorsFromSupabase = fetchVendorsFromSupabase;
+window.syncUnsyncedVendorsToSupabase = syncUnsyncedVendorsToSupabase;
+window.mergeVendorsByKey = mergeVendorsByKey;
+window.normalizeVendorRecord = normalizeVendorRecord;
+
+// --- Vendor Supabase self-test (remove after confirming) ---
+setTimeout(function() {
+    saveVendorToSupabase({
+        id: 9999,
+        vendorId: 'VD_SELFTEST',
+        name: '__selftest__',
+        email: '',
+        phone: '',
+        address: '',
+        ntn: '',
+        status: 'Active'
+    }).then(function(r) {
+        if (r && r.supabaseId) {
+            console.log('[Vendor SELFTEST] SUCCESS - inserted to Supabase, id:', r.supabaseId);
+            // clean up
+            fetch('https://uowxtxsqtlyxjhnkyjho.supabase.co/rest/v1/vendors?id=eq.' + r.supabaseId, {
+                method: 'DELETE',
+                headers: {
+                    'apikey': 'sb_publishable_Pe_Cs-YEpVY094yeziSsRw_jic4DhRS',
+                    'Authorization': 'Bearer sb_publishable_Pe_Cs-YEpVY094yeziSsRw_jic4DhRS'
+                }
+            });
+        } else {
+            console.error('[Vendor SELFTEST] FAILED - result:', r, '| lastError:', window.lastVendorSaveError);
+        }
+    }).catch(function(e) {
+        console.error('[Vendor SELFTEST] EXCEPTION:', e);
+    });
+}, 3000);
+// --- End self-test ---
 window.saveVendorPaymentsToStorage = saveVendorPaymentsToStorage;
 window.loadVendorPaymentsFromStorage = loadVendorPaymentsFromStorage;
 window.populateVendorDropdown = populateVendorDropdown;
