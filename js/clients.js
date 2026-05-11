@@ -1371,30 +1371,30 @@ function editVendor(vendorId) {
                 <button onclick="document.getElementById('edit-vendor-modal').remove()" style="background: none; border: none; font-size: 24px; cursor: pointer; color: var(--gray-500);">×</button>
             </div>
 
-            <form onsubmit="updateVendor(event, ${vendorId})" style="display: flex; flex-direction: column; gap: 16px;">
+            <form onsubmit="updateVendor(event, '${escapeJsSingleQuote(vendorId)}')" style="display: flex; flex-direction: column; gap: 16px;">
                 <div>
                     <label style="display: block; margin-bottom: 6px; font-weight: 600;">Vendor Name *</label>
-                    <input type="text" id="edit-vendor-name" value="${vendor.name || ''}" required style="width: 100%; padding: 10px; border: 1px solid var(--gray-300); border-radius: 4px; box-sizing: border-box;">
+                    <input type="text" id="edit-vendor-name" value="${escapeHtmlClients(vendor.name || '')}" required style="width: 100%; padding: 10px; border: 1px solid var(--gray-300); border-radius: 4px; box-sizing: border-box;">
                 </div>
 
                 <div>
                     <label style="display: block; margin-bottom: 6px; font-weight: 600;">Email</label>
-                    <input type="email" id="edit-vendor-email" value="${vendor.email || ''}" style="width: 100%; padding: 10px; border: 1px solid var(--gray-300); border-radius: 4px; box-sizing: border-box;">
+                    <input type="email" id="edit-vendor-email" value="${escapeHtmlClients(vendor.email || '')}" style="width: 100%; padding: 10px; border: 1px solid var(--gray-300); border-radius: 4px; box-sizing: border-box;">
                 </div>
 
                 <div>
                     <label style="display: block; margin-bottom: 6px; font-weight: 600;">Phone</label>
-                    <input type="tel" id="edit-vendor-phone" value="${vendor.phone || ''}" style="width: 100%; padding: 10px; border: 1px solid var(--gray-300); border-radius: 4px; box-sizing: border-box;">
+                    <input type="tel" id="edit-vendor-phone" value="${escapeHtmlClients(vendor.phone || '')}" style="width: 100%; padding: 10px; border: 1px solid var(--gray-300); border-radius: 4px; box-sizing: border-box;">
                 </div>
 
                 <div>
                     <label style="display: block; margin-bottom: 6px; font-weight: 600;">Address</label>
-                    <input type="text" id="edit-vendor-address" value="${vendor.address || ''}" style="width: 100%; padding: 10px; border: 1px solid var(--gray-300); border-radius: 4px; box-sizing: border-box;">
+                    <input type="text" id="edit-vendor-address" value="${escapeHtmlClients(vendor.address || '')}" style="width: 100%; padding: 10px; border: 1px solid var(--gray-300); border-radius: 4px; box-sizing: border-box;">
                 </div>
 
                 <div>
                     <label style="display: block; margin-bottom: 6px; font-weight: 600;">NTN (Optional)</label>
-                    <input type="text" id="edit-vendor-ntn" value="${vendor.ntn || ''}" style="width: 100%; padding: 10px; border: 1px solid var(--gray-300); border-radius: 4px; box-sizing: border-box;">
+                    <input type="text" id="edit-vendor-ntn" value="${escapeHtmlClients(vendor.ntn || '')}" style="width: 100%; padding: 10px; border: 1px solid var(--gray-300); border-radius: 4px; box-sizing: border-box;">
                 </div>
 
                 <div>
@@ -1516,11 +1516,11 @@ function deleteVendor(vendorId) {
         <div style="background: white; border-radius: 8px; width: 90%; max-width: 400px; padding: 24px; box-shadow: 0 10px 40px rgba(0,0,0,0.2);">
             <h2 style="margin: 0 0 12px 0; color: var(--danger);">Delete Vendor?</h2>
             <p style="margin: 0 0 20px 0; color: var(--gray-600);">
-                Are you sure you want to delete <strong>${vendor.name}</strong>? This action cannot be undone.
+                Are you sure you want to delete <strong>${escapeHtmlClients(vendor.name)}</strong>? This action cannot be undone.
             </p>
 
             <div style="display: flex; gap: 12px;">
-                <button onclick="confirmDeleteVendor(${vendorId})" class="btn" style="flex: 1; background: var(--danger); color: white;">Delete</button>
+                <button onclick="confirmDeleteVendor('${escapeJsSingleQuote(vendorId)}')" class="btn" style="flex: 1; background: var(--danger); color: white;">Delete</button>
                 <button onclick="document.getElementById('delete-vendor-modal').remove()" class="btn" style="flex: 1; background: var(--gray-200); color: var(--gray-800);">Cancel</button>
             </div>
         </div>
