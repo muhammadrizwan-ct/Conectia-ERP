@@ -511,7 +511,20 @@ async function loadVehicles() {
 
     // Load vehicles from Supabase and render
     try {
-        window.allVehicles = await fetchVehiclesFromSupabase();
+        const all = await fetchVehiclesFromSupabase();
+        // Split Supabase-archived vehicles into archivedVehicles so they survive page refresh
+        const fromSupabase = all.filter(v => String(v.status || '').toLowerCase() === 'archived');
+        const active = all.filter(v => String(v.status || '').toLowerCase() !== 'archived');
+        window.allVehicles = active;
+        // Merge with any locally-archived vehicles not yet in Supabase
+        const localArchived = loadArchivedVehiclesFromStorage();
+        const supabaseArchivedIds = new Set(fromSupabase.map(v => v.id));
+        const mergedArchived = [...fromSupabase];
+        for (const lv of localArchived) {
+            if (!supabaseArchivedIds.has(lv.id)) mergedArchived.push(lv);
+        }
+        window.archivedVehicles = mergedArchived;
+        saveArchivedVehiclesToStorage();
     } catch (error) {
         window.allVehicles = [];
         console.error('Error loading vehicles from Supabase:', error);
@@ -541,7 +554,7 @@ function saveArchivedVehiclesToStorage() {
 
 function filterArchivedVehicles(vehicles) {
     const archivedIds = new Set((window.archivedVehicles || []).map(v => v.id));
-    return vehicles.filter(v => !archivedIds.has(v.id));
+    return vehicles.filter(v => !archivedIds.has(v.id) && String(v.status || '').toLowerCase() !== 'archived');
 }
 
 function displayVehiclesTable(vehicles) {
