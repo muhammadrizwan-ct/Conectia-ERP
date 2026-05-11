@@ -386,6 +386,42 @@ async function updateClientInSupabase(clientId, updates) {
     const normalizedDefaultUnitPrice = Number(updates.defaultUnitPrice ?? updates.default_unit_price ?? 0);
     const normalizedStatus = normalizeClientStatus(updates.status);
 
+    // Build a minimal, guaranteed payload using only columns we know exist in the DB.
+    // Keeping status separate ensures it is NEVER stripped by the retry loop.
+    const corePayload = {
+        name: updates.name,
+        email: updates.email,
+        phone: updates.phone,
+        address: updates.address,
+        ntn: updates.ntn || null,
+        status: normalizedStatus
+    };
+
+    // The UUID from the fetched row is the most reliable identifier
+    const uuid = String(updates.id || '').trim();
+
+    // --- Direct update by UUID (preferred) ---
+    if (uuid) {
+        try {
+            const { data, error } = await supabase
+                .from('clients')
+                .update(corePayload)
+                .eq('id', uuid)
+                .select('*');
+
+            if (!error && Array.isArray(data) && data.length > 0) {
+                await logClientAudit('update', data[0]);
+                return data[0];
+            }
+            if (error) {
+                console.warn('Direct update by UUID failed:', error.message);
+            }
+        } catch (e) {
+            console.warn('Direct update by UUID exception:', e);
+        }
+    }
+
+    // --- Fallback: try additional column variants and identifiers ---
     const basePayload = {
         clientid: updates.clientId,
         name: updates.name,
@@ -393,19 +429,9 @@ async function updateClientInSupabase(clientId, updates) {
         phone: updates.phone,
         address: updates.address,
         ntn: updates.ntn,
-        default_unit_price: normalizedDefaultUnitPrice
+        default_unit_price: normalizedDefaultUnitPrice,
+        status: normalizedStatus
     };
-
-    const statusPatches = [
-        { status: normalizedStatus },
-        { client_status: normalizedStatus },
-        { clientStatus: normalizedStatus }
-    ];
-
-    const candidatePayloads = statusPatches.map((statusPatch) => ({
-        ...basePayload,
-        ...statusPatch
-    }));
 
     const rawIdentifiers = [clientId, updates?.id, updates?.clientId, updates?.clientid];
     const identifiers = [];
@@ -424,58 +450,58 @@ async function updateClientInSupabase(clientId, updates) {
 
     let lastError = null;
 
+    const cleanPayload = Object.fromEntries(
+        Object.entries(basePayload).filter(([, value]) => value !== undefined)
+    );
 
-    for (const rawPayload of candidatePayloads) {
-        const cleanPayload = Object.fromEntries(
-            Object.entries(rawPayload).filter(([, value]) => value !== undefined)
-        );
+    for (const matcher of matchers) {
+        let attempts = 0;
 
-        for (const matcher of matchers) {
-            let attempts = 0;
+        while (attempts < 12) {
+            const { data, error } = await supabase
+                .from('clients')
+                .update(cleanPayload)
+                .eq(matcher.column, matcher.value)
+                .select('*');
 
-            while (attempts < 12) {
-                const { data, error } = await supabase
-                    .from('clients')
-                    .update(cleanPayload)
-                    .eq(matcher.column, matcher.value)
-                    .select('*');
-
-                if (!error) {
-                    if (Array.isArray(data) && data.length > 0) {
-                        // Audit log for update
-                        await logClientAudit('update', data[0]);
-                        return data[0];
-                    }
-                    break;
+            if (!error) {
+                if (Array.isArray(data) && data.length > 0) {
+                    await logClientAudit('update', data[0]);
+                    return data[0];
                 }
-
-                lastError = error;
-                const message = String(error.message || '');
-
-                if (/invalid input syntax for type uuid/i.test(message) && matcher.column === 'id') {
-                    break;
-                }
-                if (/Could not find the 'id' column/i.test(message) && matcher.column === 'id') {
-                    break;
-                }
-                if (/Could not find the 'clientid' column/i.test(message) && matcher.column === 'clientid') {
-                    break;
-                }
-
-                const missingColumnMatch = message.match(/Could not find the '([^']+)' column/i);
-                if (!missingColumnMatch) {
-                    break;
-                }
-
-                const missingColumn = missingColumnMatch[1];
-                const matchingKey = Object.keys(cleanPayload).find((key) => key.toLowerCase() === missingColumn.toLowerCase());
-                if (!matchingKey) {
-                    break;
-                }
-
-                delete cleanPayload[matchingKey];
-                attempts += 1;
+                break;
             }
+
+            lastError = error;
+            const message = String(error.message || '');
+
+            if (/invalid input syntax for type uuid/i.test(message) && matcher.column === 'id') {
+                break;
+            }
+            if (/Could not find the 'id' column/i.test(message) && matcher.column === 'id') {
+                break;
+            }
+            if (/Could not find the 'clientid' column/i.test(message) && matcher.column === 'clientid') {
+                break;
+            }
+
+            const missingColumnMatch = message.match(/Could not find the '([^']+)' column/i);
+            if (!missingColumnMatch) {
+                break;
+            }
+
+            const missingColumn = missingColumnMatch[1];
+            // Never strip category or status — these are critical fields
+            if (['status', 'name', 'email'].includes(missingColumn.toLowerCase())) {
+                break;
+            }
+            const matchingKey = Object.keys(cleanPayload).find((key) => key.toLowerCase() === missingColumn.toLowerCase());
+            if (!matchingKey) {
+                break;
+            }
+
+            delete cleanPayload[matchingKey];
+            attempts += 1;
         }
     }
 
