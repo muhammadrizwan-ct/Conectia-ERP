@@ -2057,6 +2057,11 @@ async function archiveVehicle(vehicleId) {
         window.archivedVehicles.push(vehicle);
         saveArchivedVehiclesToStorage();
     }
+
+    // Update status to Archived in Supabase
+    if (isUuidValue(vehicle.id)) {
+        await updateVehicleInSupabase(vehicle.id, { ...vehicle, status: 'Archived' });
+    }
     
     window.allVehicles = window.allVehicles.filter(v => toComparableVehicleId(v.id) !== targetId);
     displayVehiclesTable(window.allVehicles);
@@ -2135,6 +2140,13 @@ async function unarchiveVehicle(vehicleId) {
     
     const vehicle = archived.splice(index, 1)[0];
     saveArchivedVehiclesToStorage();
+
+    // Restore original status (default Active) in Supabase
+    const restoredStatus = (vehicle.status === 'Archived' ? 'Active' : vehicle.status) || 'Active';
+    if (isUuidValue(vehicle.id)) {
+        await updateVehicleInSupabase(vehicle.id, { ...vehicle, status: restoredStatus });
+    }
+    vehicle.status = restoredStatus;
     
     window.allVehicles = window.allVehicles || [];
     if (!window.allVehicles.find(v => toComparableVehicleId(v.id) === targetId)) {
