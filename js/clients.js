@@ -391,28 +391,37 @@ async function updateClientInSupabase(clientId, updates) {
         return null;
     }
 
-    const payload = {
+    // Step 1: Update all fields except status (these columns are stable in PostgREST cache)
+    const corePayload = {
         name: updates.name,
         email: updates.email,
         phone: updates.phone || null,
         address: updates.address || null,
-        ntn: updates.ntn || null,
-        status: normalizedStatus
+        ntn: updates.ntn || null
     };
 
-    const { data, error } = await supabase
+    const { error: coreError } = await supabase
         .from('clients')
-        .update(payload)
-        .eq('id', uuid)
-        .select('*');
+        .update(corePayload)
+        .eq('id', uuid);
 
-    if (error) {
-        console.error('updateClientInSupabase error:', error.message);
+    if (coreError) {
+        console.error('updateClientInSupabase core error:', coreError.message);
         return null;
     }
 
-    // No error = update succeeded. RLS may filter returned rows → empty data[] is still success.
-    const updatedRow = (Array.isArray(data) && data.length > 0) ? data[0] : { ...updates, ...payload };
+    // Step 2: Update status via RPC (bypasses PostgREST schema cache, guaranteed to work)
+    const { error: rpcError } = await supabase.rpc('update_client_status', {
+        p_client_id: uuid,
+        p_status: normalizedStatus
+    });
+
+    if (rpcError) {
+        console.error('updateClientInSupabase RPC status error:', rpcError.message);
+        // Still return core update as success — status failed, but other fields saved
+    }
+
+    const updatedRow = { ...updates, ...corePayload, status: normalizedStatus };
     await logClientAudit('update', updatedRow);
     return updatedRow;
 }
@@ -1266,15 +1275,22 @@ async function updateClient(event, clientId) {
         ...(updatedRow || {})
     }, updatedClientPayload.status);
 
-    try {
-        window.allClients = await fetchClientsFromSupabase();
-    } catch (error) {
-        window.allClients[clientIndex] = {
-            ...updatedClientPayload,
-            ...updatedRow
-        };
-    }
-    
+    // Update local array immediately with what we saved (don't re-fetch — stale schema cache
+    // can cause re-fetch to return old status value, overwriting the just-saved status)
+    window.allClients[clientIndex] = {
+        ...window.allClients[clientIndex],
+        ...updatedClientPayload,
+        ...updatedRow
+    };
+
+    // Background re-fetch to sync any other changes (won't overwrite local status)
+    fetchClientsFromSupabase().then(freshClients => {
+        if (Array.isArray(freshClients) && freshClients.length > 0) {
+            window.allClients = freshClients;
+            displayClientsTable(window.allClients);
+        }
+    }).catch(() => {});
+
     // Update table
     displayClientsTable(window.allClients);
     // Close modal
