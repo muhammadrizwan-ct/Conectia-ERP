@@ -6,6 +6,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     }
 
     await Auth.init();
+    checkSessionExpiry(); // Enforce 12-hour session limit on page load
 
     if (Auth.isLoggedIn()) {
         initializeApp();

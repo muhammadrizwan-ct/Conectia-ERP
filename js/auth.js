@@ -814,8 +814,7 @@ function checkSessionExpiry() {
 
 // Check every 5 minutes
 setInterval(checkSessionExpiry, 5 * 60 * 1000);
-// Also check once shortly after page load
-setTimeout(checkSessionExpiry, 3000);
+// Note: initial check is done in app.js after Auth.init() completes
 
 window.ensureDataActionPermission = ensureDataActionPermission;
 window.ensureFeaturePermission = ensureFeaturePermission;
