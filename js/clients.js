@@ -241,8 +241,10 @@ async function saveClientToSupabase(client) {
             address: client.address,
             ntn: client.ntn,
             status: normalizedStatus,
+            is_active: statusAsBoolean,
             default_unit_price: normalizedDefaultUnitPrice
         },
+        buildSnakeCasePayload(client, { status: normalizedStatus, is_active: statusAsBoolean }),
         buildSnakeCasePayload(client, { status: normalizedStatus }),
         buildSnakeCasePayload(client, { client_status: normalizedStatus }),
         buildSnakeCasePayload(client, { clientStatus: normalizedStatus }),
@@ -400,7 +402,11 @@ async function updateClientInSupabase(clientId, updates) {
         default_unit_price: normalizedDefaultUnitPrice
     };
 
+    // Include both text status and boolean is_active so both columns stay in sync.
+    // Ordering: unified payload first (covers tables with status column),
+    // then fallbacks for tables that only have is_active / other variants.
     const statusPatches = [
+        { status: normalizedStatus, is_active: statusAsBoolean },
         { status: normalizedStatus },
         { client_status: normalizedStatus },
         { clientStatus: normalizedStatus },
