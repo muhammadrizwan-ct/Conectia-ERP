@@ -233,6 +233,17 @@ function addClientFleet(clientName, fleetName) {
     return false;
 }
 
+// Derive fleet names from allVehicles and merge into clientFleets for a given client
+function syncFleetsFromVehicles(clientName) {
+    initializeClientFleets(clientName);
+    const nameLower = clientName.trim().toLowerCase();
+    const fromVehicles = (window.allVehicles || [])
+        .filter(v => String(v.clientName || '').trim().toLowerCase() === nameLower)
+        .map(v => String(v.category || '').trim())
+        .filter(f => f && f.toLowerCase() !== 'default');
+    [...new Set(fromVehicles)].forEach(f => addClientFleet(clientName, f));
+}
+
 function removeClientFleet(clientName, fleetName) {
     initializeClientFleets(clientName);
     const index = window.clientFleets[clientName].indexOf(fleetName);

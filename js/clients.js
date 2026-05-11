@@ -1205,7 +1205,7 @@ function editClient(clientId) {
             // Display current fleets for this client in the modal
             setTimeout(() => {
                 const clientName = '${client.name}';
-                initializeClientFleets(clientName);
+                syncFleetsFromVehicles(clientName);
                 const categoryList = document.getElementById('category-list');
                 const fleets = window.clientFleets[clientName] || [];
                 if (fleets && fleets.length > 0) {
@@ -1591,7 +1591,7 @@ function showCategoryManagementModal(clientName) {
         return;
     }
     
-    initializeClientFleets(clientName);
+    syncFleetsFromVehicles(clientName);
     
     const modal = document.createElement('div');
     modal.id = 'category-management-modal';
