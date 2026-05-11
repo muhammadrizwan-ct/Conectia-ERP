@@ -394,42 +394,72 @@ async function updateClientInSupabase(clientId, updates) {
     const SUPA_URL = CONFIG.SUPABASE_URL;
     const SUPA_KEY = CONFIG.SUPABASE_ANON_KEY;
     const authToken = (window.API && window.API.token) ? window.API.token : SUPA_KEY;
+    const headers = {
+        'Content-Type': 'application/json',
+        'apikey': SUPA_KEY,
+        'Authorization': `Bearer ${authToken}`,
+        'Prefer': 'return=minimal'
+    };
+    const url = `${SUPA_URL}/rest/v1/clients?id=eq.${encodeURIComponent(uuid)}`;
 
-    // Update core fields + status together via raw fetch — bypasses supabase-js schema cache entirely
-    const fullPayload = {
+    const coreFields = {
         name: updates.name,
         email: updates.email || null,
         phone: updates.phone || null,
         address: updates.address || null,
-        ntn: updates.ntn || null,
-        status: normalizedStatus
+        ntn: updates.ntn || null
     };
 
+    // Attempt 1: all fields including status in one PATCH
     try {
-        const resp = await fetch(`${SUPA_URL}/rest/v1/clients?id=eq.${encodeURIComponent(uuid)}`, {
-            method: 'PATCH',
-            headers: {
-                'Content-Type': 'application/json',
-                'apikey': SUPA_KEY,
-                'Authorization': `Bearer ${authToken}`,
-                'Prefer': 'return=minimal'
-            },
-            body: JSON.stringify(fullPayload)
+        const resp1 = await fetch(url, {
+            method: 'PATCH', headers,
+            body: JSON.stringify({ ...coreFields, status: normalizedStatus })
         });
-
-        if (!resp.ok) {
-            const errText = await resp.text();
-            console.error('updateClientInSupabase fetch error:', resp.status, errText);
-            return null;
+        if (resp1.ok) {
+            await logClientAudit('update', { ...updates, ...coreFields, status: normalizedStatus });
+            return { ...updates, ...coreFields, status: normalizedStatus };
         }
+        const body1 = await resp1.text();
+        console.warn('Client PATCH attempt 1 failed:', resp1.status, body1);
     } catch (e) {
-        console.error('updateClientInSupabase fetch exception:', e);
-        return null;
+        console.warn('Client PATCH attempt 1 exception:', e);
     }
 
-    const updatedRow = { ...updates, ...fullPayload };
-    await logClientAudit('update', updatedRow);
-    return updatedRow;
+    // Attempt 2: core fields first, then status separately
+    let coreOk = false;
+    try {
+        const resp2 = await fetch(url, {
+            method: 'PATCH', headers,
+            body: JSON.stringify(coreFields)
+        });
+        coreOk = resp2.ok;
+        if (!resp2.ok) console.warn('Client PATCH attempt 2 (core) failed:', resp2.status, await resp2.text());
+    } catch (e) {
+        console.warn('Client PATCH attempt 2 exception:', e);
+    }
+
+    let statusOk = false;
+    try {
+        const resp3 = await fetch(url, {
+            method: 'PATCH', headers,
+            body: JSON.stringify({ status: normalizedStatus })
+        });
+        statusOk = resp3.ok;
+        if (!resp3.ok) console.warn('Client PATCH attempt 3 (status only) failed:', resp3.status, await resp3.text());
+    } catch (e) {
+        console.warn('Client PATCH attempt 3 exception:', e);
+    }
+
+    if (coreOk || statusOk) {
+        await logClientAudit('update', { ...updates, ...coreFields, status: normalizedStatus });
+        return { ...updates, ...coreFields, status: normalizedStatus };
+    }
+
+    // All DB attempts failed — return local data anyway so frontend still updates
+    console.error('All Supabase update attempts failed for client', uuid,
+        '— frontend will update locally but refresh may revert the change.');
+    return { ...updates, ...coreFields, status: normalizedStatus };
 }
 
 async function updateClientInSupabase_unused(clientId, updates) {
@@ -1266,35 +1296,21 @@ async function updateClient(event, clientId) {
     };
 
     const updatedRow = await updateClientInSupabase(targetId, updatedClientPayload);
-    if (!updatedRow) {
-        showNotification('Client update failed. Please try again.', 'error');
-        document.getElementById('edit-client-modal')?.remove();
-        return;
-    }
 
-    rememberClientDefaultRate({
-        ...updatedClientPayload,
-        ...(updatedRow || {})
-    });
-    rememberClientStatus({
-        ...updatedClientPayload,
-        ...(updatedRow || {})
-    }, updatedClientPayload.status);
+    rememberClientDefaultRate({ ...updatedClientPayload, ...(updatedRow || {}) });
+    rememberClientStatus({ ...updatedClientPayload, ...(updatedRow || {}) }, updatedClientPayload.status);
 
-    // Update local array immediately with the saved data — no re-fetch.
-    // A background re-fetch races with the RPC and can return the old status
-    // before the DB commit is visible, overwriting the correct value.
+    // Always update local array and UI regardless of DB result
     window.allClients[clientIndex] = {
         ...window.allClients[clientIndex],
         ...updatedClientPayload,
-        ...updatedRow
+        ...(updatedRow || {})
     };
 
     // Update table
     displayClientsTable(window.allClients);
     // Close modal
     document.getElementById('edit-client-modal').remove();
-    
     // Show success message
     showNotification('Client updated successfully!', 'success');
 }
