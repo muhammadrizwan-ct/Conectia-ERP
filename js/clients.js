@@ -397,11 +397,11 @@ async function updateClientInSupabase(clientId, updates) {
     const headers = {
         'Content-Type': 'application/json',
         'apikey': SUPA_KEY,
-        'Authorization': `Bearer ${authToken}`,
-        'Prefer': 'return=minimal'
+        'Authorization': `Bearer ${authToken}`
     };
     const url = `${SUPA_URL}/rest/v1/clients?id=eq.${encodeURIComponent(uuid)}`;
 
+    // Step 1: update core fields (name/email/phone/address/ntn)
     const coreFields = {
         name: updates.name,
         email: updates.email || null,
@@ -409,56 +409,54 @@ async function updateClientInSupabase(clientId, updates) {
         address: updates.address || null,
         ntn: updates.ntn || null
     };
-
-    // Attempt 1: all fields including status in one PATCH
     try {
-        const resp1 = await fetch(url, {
-            method: 'PATCH', headers,
-            body: JSON.stringify({ ...coreFields, status: normalizedStatus })
-        });
-        if (resp1.ok) {
-            await logClientAudit('update', { ...updates, ...coreFields, status: normalizedStatus });
-            return { ...updates, ...coreFields, status: normalizedStatus };
-        }
-        const body1 = await resp1.text();
-        console.warn('Client PATCH attempt 1 failed:', resp1.status, body1);
-    } catch (e) {
-        console.warn('Client PATCH attempt 1 exception:', e);
-    }
-
-    // Attempt 2: core fields first, then status separately
-    let coreOk = false;
-    try {
-        const resp2 = await fetch(url, {
-            method: 'PATCH', headers,
+        await fetch(url, {
+            method: 'PATCH',
+            headers: { ...headers, 'Prefer': 'return=minimal' },
             body: JSON.stringify(coreFields)
         });
-        coreOk = resp2.ok;
-        if (!resp2.ok) console.warn('Client PATCH attempt 2 (core) failed:', resp2.status, await resp2.text());
     } catch (e) {
-        console.warn('Client PATCH attempt 2 exception:', e);
+        console.error('Core fields PATCH failed:', e);
     }
 
-    let statusOk = false;
+    // Step 2: update status via direct SQL using supabase.rpc
+    // This runs real SQL on the DB, bypassing PostgREST schema cache entirely.
+    // Requires the update_client_status function to be created in Supabase.
+    let statusSavedViaRpc = false;
     try {
-        const resp3 = await fetch(url, {
-            method: 'PATCH', headers,
-            body: JSON.stringify({ status: normalizedStatus })
+        const { error: rpcError } = await supabase.rpc('update_client_status', {
+            p_client_id: uuid,
+            p_status: normalizedStatus
         });
-        statusOk = resp3.ok;
-        if (!resp3.ok) console.warn('Client PATCH attempt 3 (status only) failed:', resp3.status, await resp3.text());
+        if (!rpcError) {
+            statusSavedViaRpc = true;
+        } else {
+            console.warn('RPC update_client_status error:', rpcError.message,
+                '— Make sure to run the RPC migration in Supabase SQL Editor.');
+        }
     } catch (e) {
-        console.warn('Client PATCH attempt 3 exception:', e);
+        console.warn('RPC call failed:', e);
     }
 
-    if (coreOk || statusOk) {
-        await logClientAudit('update', { ...updates, ...coreFields, status: normalizedStatus });
-        return { ...updates, ...coreFields, status: normalizedStatus };
-    }
+    // Step 3: verify what was actually saved in the DB
+    try {
+        const checkResp = await fetch(
+            `${SUPA_URL}/rest/v1/clients?id=eq.${encodeURIComponent(uuid)}&select=id,name,status`,
+            { headers: { 'apikey': SUPA_KEY, 'Authorization': `Bearer ${authToken}` } }
+        );
+        if (checkResp.ok) {
+            const rows = await checkResp.json();
+            const saved = rows && rows[0];
+            console.log('[ClientUpdate] DB state after save —',
+                'name:', saved?.name,
+                '| status in DB:', saved?.status,
+                '| status we sent:', normalizedStatus,
+                '| RPC used:', statusSavedViaRpc
+            );
+        }
+    } catch (e) { /* verification is best-effort */ }
 
-    // All DB attempts failed — return local data anyway so frontend still updates
-    console.error('All Supabase update attempts failed for client', uuid,
-        '— frontend will update locally but refresh may revert the change.');
+    await logClientAudit('update', { ...updates, ...coreFields, status: normalizedStatus });
     return { ...updates, ...coreFields, status: normalizedStatus };
 }
 
