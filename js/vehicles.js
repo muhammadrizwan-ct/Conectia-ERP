@@ -1329,8 +1329,19 @@ async function updateVehicleInSupabase(vehicleId, updates) {
     };
     const url = `${SUPA_URL}/rest/v1/vehicles?id=eq.${encodeURIComponent(uuid)}`;
 
-    // Try snake_case first (standard Supabase), then compact lowercase fallback
+    // Compact-lowercase first (matches the INSERT schema), snake_case as fallback
     const candidatePayloads = [
+        {
+            registrationno: updates.registrationNo,
+            brand: updates.brand,
+            model: updates.model,
+            category: updates.category || updates.type,
+            clientname: updates.clientName,
+            status: updates.status,
+            imeino: updates.imeiNo,
+            simno: updates.simNo,
+            installationdate: updates.installationDate || updates.installDate || null
+        },
         {
             registration_no: updates.registrationNo,
             brand: updates.brand,
@@ -1346,17 +1357,6 @@ async function updateVehicleInSupabase(vehicleId, updates) {
             install_date: updates.installDate || updates.installationDate || null,
             installation_date: updates.installationDate || updates.installDate || null,
             notes: updates.notes || null
-        },
-        {
-            registrationno: updates.registrationNo,
-            brand: updates.brand,
-            model: updates.model,
-            category: updates.category || updates.type,
-            clientname: updates.clientName,
-            status: updates.status,
-            imeino: updates.imeiNo,
-            simno: updates.simNo,
-            installationdate: updates.installationDate || updates.installDate || null
         }
     ];
 
@@ -1364,6 +1364,9 @@ async function updateVehicleInSupabase(vehicleId, updates) {
         const payload = Object.fromEntries(
             Object.entries(rawPayload).filter(([, v]) => v !== undefined && v !== null && v !== '')
         );
+
+        // Skip empty payloads — PostgREST returns 204 on an empty PATCH but updates nothing
+        if (Object.keys(payload).length === 0) continue;
 
         let attempt = 0;
         while (attempt < 15) {
@@ -1384,6 +1387,9 @@ async function updateVehicleInSupabase(vehicleId, updates) {
             const matchingKey = Object.keys(payload).find(k => k.toLowerCase() === badCol.toLowerCase());
             if (!matchingKey) break;
             delete payload[matchingKey];
+
+            // If stripping leaves the payload empty, bail out of this candidate
+            if (Object.keys(payload).length === 0) break;
             attempt++;
         }
     }
