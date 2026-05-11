@@ -383,43 +383,42 @@ function escapeHtmlClients(value) {
 }
 
 async function updateClientInSupabase(clientId, updates) {
-    const normalizedDefaultUnitPrice = Number(updates.defaultUnitPrice ?? updates.default_unit_price ?? 0);
     const normalizedStatus = normalizeClientStatus(updates.status);
+    const uuid = String(updates.id || '').trim();
 
-    // Build a minimal, guaranteed payload using only columns we know exist in the DB.
-    // Keeping status separate ensures it is NEVER stripped by the retry loop.
-    const corePayload = {
+    if (!uuid) {
+        console.error('updateClientInSupabase: no UUID for client', updates.name);
+        return null;
+    }
+
+    const payload = {
         name: updates.name,
         email: updates.email,
-        phone: updates.phone,
-        address: updates.address,
+        phone: updates.phone || null,
+        address: updates.address || null,
         ntn: updates.ntn || null,
         status: normalizedStatus
     };
 
-    // The UUID from the fetched row is the most reliable identifier
-    const uuid = String(updates.id || '').trim();
+    const { data, error } = await supabase
+        .from('clients')
+        .update(payload)
+        .eq('id', uuid)
+        .select('*');
 
-    // --- Direct update by UUID (preferred) ---
-    if (uuid) {
-        try {
-            const { data, error } = await supabase
-                .from('clients')
-                .update(corePayload)
-                .eq('id', uuid)
-                .select('*');
-
-            if (!error && Array.isArray(data) && data.length > 0) {
-                await logClientAudit('update', data[0]);
-                return data[0];
-            }
-            if (error) {
-                console.warn('Direct update by UUID failed:', error.message);
-            }
-        } catch (e) {
-            console.warn('Direct update by UUID exception:', e);
-        }
+    if (error) {
+        console.error('updateClientInSupabase error:', error.message);
+        return null;
     }
+
+    // No error = update succeeded. RLS may filter returned rows → empty data[] is still success.
+    const updatedRow = (Array.isArray(data) && data.length > 0) ? data[0] : { ...updates, ...payload };
+    await logClientAudit('update', updatedRow);
+    return updatedRow;
+}
+
+async function updateClientInSupabase_unused(clientId, updates) {
+    const normalizedDefaultUnitPrice = Number(updates.defaultUnitPrice ?? updates.default_unit_price ?? 0);
 
     // --- Fallback: try additional column variants and identifiers ---
     const basePayload = {
@@ -1253,7 +1252,8 @@ async function updateClient(event, clientId) {
 
     const updatedRow = await updateClientInSupabase(targetId, updatedClientPayload);
     if (!updatedRow) {
-        showNotification('Client update failed on Supabase.', 'error');
+        showNotification('Client update failed. Please try again.', 'error');
+        document.getElementById('edit-client-modal')?.remove();
         return;
     }
 
