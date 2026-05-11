@@ -25,16 +25,16 @@ async function loadReports() {
                 <div class="card-body" style="padding-top: 10px;">
                     <div id="report-options" style="display: grid; grid-template-columns: repeat(2, minmax(140px, 1fr)); gap: 8px 12px;">
                         <label style="display: flex; align-items: center; gap: 8px; margin: 0;">
-                            <input type="checkbox" checked> Revenue Report
+                            <input type="checkbox" id="rpt-revenue" checked> Revenue Report
                         </label>
                         <label style="display: flex; align-items: center; gap: 8px; margin: 0;">
-                            <input type="checkbox" checked> Payment Collections
+                            <input type="checkbox" id="rpt-payments" checked> Payment Collections
                         </label>
                         <label style="display: flex; align-items: center; gap: 8px; margin: 0;">
-                            <input type="checkbox" checked> Vehicle Details
+                            <input type="checkbox" id="rpt-vehicles" checked> Vehicle Details
                         </label>
                         <label style="display: flex; align-items: center; gap: 8px; margin: 0;">
-                            <input type="checkbox" checked> Client Summary
+                            <input type="checkbox" id="rpt-clients" checked> Client Summary
                         </label>
                     </div>
                 </div>
@@ -1314,13 +1314,346 @@ function generateClientDistributionChart() {
 }
 
 function generateRevenueReport() {
-    alert('Generate Revenue Report - Coming Soon!');
+    // period dropdown is decorative — actual data is fetched live
 }
 
-function generatePDFReport() {
-    alert('Export PDF Report - Coming Soon!');
+async function generatePDFReport() {
+    const JsPdfConstructor = (window.jspdf && window.jspdf.jsPDF) || (typeof jsPDF !== 'undefined' ? jsPDF : null);
+    if (!JsPdfConstructor) {
+        showNotification('PDF library not loaded. Please refresh and try again.', 'error');
+        return;
+    }
+
+    const wantRevenue   = document.getElementById('rpt-revenue')?.checked !== false;
+    const wantPayments  = document.getElementById('rpt-payments')?.checked !== false;
+    const wantVehicles  = document.getElementById('rpt-vehicles')?.checked !== false;
+    const wantClients   = document.getElementById('rpt-clients')?.checked !== false;
+
+    if (!wantRevenue && !wantPayments && !wantVehicles && !wantClients) {
+        showNotification('Please select at least one report section.', 'warning');
+        return;
+    }
+
+    showNotification('Generating PDF report…', 'info');
+
+    try {
+        const [invoices, clients, payments, vehicles] = await Promise.all([
+            getReportsInvoices(),
+            getReportsClients(),
+            (typeof fetchPaymentsFromSupabase === 'function') ? fetchPaymentsFromSupabase() : Promise.resolve([]),
+            (typeof fetchVehiclesFromSupabase === 'function') ? fetchVehiclesFromSupabase() : Promise.resolve(window.allVehicles || [])
+        ]);
+
+        const doc = new JsPdfConstructor({ orientation: 'portrait', unit: 'mm', format: 'a4' });
+        const generatedAt = new Date().toLocaleString();
+        const pageW = doc.internal.pageSize.getWidth();
+        let isFirstSection = true;
+
+        const addSectionHeader = (title) => {
+            if (!isFirstSection) doc.addPage();
+            isFirstSection = false;
+            doc.setFillColor(37, 99, 235);
+            doc.rect(0, 0, pageW, 18, 'F');
+            doc.setTextColor(255, 255, 255);
+            doc.setFontSize(13);
+            doc.setFont(undefined, 'bold');
+            doc.text('Connectia ERP', 14, 10);
+            doc.setFontSize(10);
+            doc.setFont(undefined, 'normal');
+            doc.text(title, 14, 16);
+            doc.setTextColor(100, 100, 100);
+            doc.setFontSize(8);
+            doc.text(`Generated: ${generatedAt}`, pageW - 14, 16, { align: 'right' });
+            doc.setTextColor(0, 0, 0);
+        };
+
+        // ── Revenue Report ──────────────────────────────────────────────
+        if (wantRevenue) {
+            addSectionHeader('Revenue Report');
+            const months = getLast12MonthKeys();
+            const monthKeys = months.map(m => m.key);
+
+            const revenueByMonth = {};
+            payments.forEach(p => {
+                const dateStr = p.paymentDate || p.payment_date || p.date || p.created_at || '';
+                const dt = new Date(dateStr);
+                if (Number.isNaN(dt.getTime())) return;
+                const key = `${dt.getFullYear()}-${String(dt.getMonth() + 1).padStart(2, '0')}`;
+                if (!monthKeys.includes(key)) return;
+                revenueByMonth[key] = (revenueByMonth[key] || 0) + normalizeReportMoney(p.paidAmount ?? p.amount ?? 0);
+            });
+
+            const billedByMonth = {};
+            invoices.forEach(inv => {
+                const key = getInvoiceMonthKey(inv);
+                if (!monthKeys.includes(key)) return;
+                billedByMonth[key] = (billedByMonth[key] || 0) + normalizeReportMoney(inv.totalAmount ?? inv.total_amount ?? inv.total);
+            });
+
+            const totalBilled = Object.values(billedByMonth).reduce((s, v) => s + v, 0);
+            const totalCollected = Object.values(revenueByMonth).reduce((s, v) => s + v, 0);
+
+            doc.setFontSize(10);
+            doc.text(`Total Billed (12 months): ${formatPKR(totalBilled)}`, 14, 26);
+            doc.text(`Total Collected (12 months): ${formatPKR(totalCollected)}`, 14, 32);
+
+            const revenueRows = months.map(m => [
+                m.label,
+                formatPKR(billedByMonth[m.key] || 0),
+                formatPKR(revenueByMonth[m.key] || 0)
+            ]);
+
+            doc.autoTable({
+                startY: 38,
+                head: [['Month', 'Billed', 'Collected']],
+                body: revenueRows,
+                styles: { fontSize: 9 },
+                headStyles: { fillColor: [37, 99, 235] },
+                margin: { left: 14, right: 14 }
+            });
+        }
+
+        // ── Payment Collections ─────────────────────────────────────────
+        if (wantPayments) {
+            addSectionHeader('Payment Collections');
+            const sortedPayments = [...payments].sort((a, b) => {
+                const da = new Date(a.paymentDate || a.payment_date || a.date || a.created_at || '');
+                const db = new Date(b.paymentDate || b.payment_date || b.date || b.created_at || '');
+                return db - da;
+            });
+
+            const paymentRows = sortedPayments.map(p => [
+                p.receiptNo || p.paymentNo || '-',
+                p.clientName || p.client_name || '-',
+                formatDate(p.paymentDate || p.payment_date || p.date || p.created_at || ''),
+                p.paymentMethod || p.payment_method || '-',
+                formatPKR(normalizeReportMoney(p.paidAmount ?? p.amount ?? 0))
+            ]);
+
+            const totalCollected = payments.reduce((s, p) => s + normalizeReportMoney(p.paidAmount ?? p.amount ?? 0), 0);
+            doc.setFontSize(10);
+            doc.text(`Total Payments: ${payments.length}   |   Total Collected: ${formatPKR(totalCollected)}`, 14, 26);
+
+            doc.autoTable({
+                startY: 32,
+                head: [['Receipt #', 'Client', 'Date', 'Method', 'Amount']],
+                body: paymentRows,
+                styles: { fontSize: 8 },
+                headStyles: { fillColor: [37, 99, 235] },
+                columnStyles: { 4: { halign: 'right' } },
+                margin: { left: 14, right: 14 }
+            });
+        }
+
+        // ── Vehicle Details ─────────────────────────────────────────────
+        if (wantVehicles) {
+            addSectionHeader('Vehicle Details');
+            const activeVehicles = vehicles.filter(v => String(v.status || '').toLowerCase() !== 'archived');
+            const vehicleRows = activeVehicles.map(v => [
+                v.registrationNo || v.registrationno || '-',
+                v.make || v.vehicleMake || '-',
+                v.model || v.vehicleModel || '-',
+                v.clientName || v.clientname || '-',
+                v.category || v.fleet || '-',
+                v.status || '-'
+            ]);
+
+            doc.setFontSize(10);
+            doc.text(`Total Vehicles: ${activeVehicles.length}`, 14, 26);
+
+            doc.autoTable({
+                startY: 32,
+                head: [['Reg No', 'Make', 'Model', 'Client', 'Fleet', 'Status']],
+                body: vehicleRows,
+                styles: { fontSize: 8 },
+                headStyles: { fillColor: [37, 99, 235] },
+                margin: { left: 14, right: 14 }
+            });
+        }
+
+        // ── Client Summary ──────────────────────────────────────────────
+        if (wantClients) {
+            addSectionHeader('Client Summary');
+            const billedByClient = {};
+            const collectedByClient = {};
+            invoices.forEach(inv => {
+                const name = String(inv.clientName || '').trim();
+                if (!name) return;
+                billedByClient[name] = (billedByClient[name] || 0) + normalizeReportMoney(inv.totalAmount ?? inv.total_amount ?? inv.total);
+                collectedByClient[name] = (collectedByClient[name] || 0) + normalizeReportMoney(inv.paidAmount ?? inv.paid_amount ?? 0);
+            });
+
+            const clientRows = clients.map(c => {
+                const name = String(c.name || '').trim();
+                const billed = billedByClient[name] || 0;
+                const collected = collectedByClient[name] || 0;
+                return [
+                    name,
+                    c.status || '-',
+                    c.phone || '-',
+                    formatPKR(billed),
+                    formatPKR(collected),
+                    formatPKR(Math.max(billed - collected, 0))
+                ];
+            });
+
+            doc.setFontSize(10);
+            doc.text(`Total Clients: ${clients.length}`, 14, 26);
+
+            doc.autoTable({
+                startY: 32,
+                head: [['Client', 'Status', 'Phone', 'Billed', 'Collected', 'Balance']],
+                body: clientRows,
+                styles: { fontSize: 8 },
+                headStyles: { fillColor: [37, 99, 235] },
+                columnStyles: { 3: { halign: 'right' }, 4: { halign: 'right' }, 5: { halign: 'right' } },
+                margin: { left: 14, right: 14 }
+            });
+        }
+
+        const fileName = `conectia-report-${new Date().toISOString().slice(0, 10)}.pdf`;
+        doc.save(fileName);
+        showNotification('PDF report downloaded.', 'success');
+    } catch (err) {
+        console.error('PDF report error:', err);
+        showNotification('Could not generate PDF report.', 'error');
+    }
 }
 
-function generateExcelReport() {
-    alert('Export Excel Report - Coming Soon!');
+async function generateExcelReport() {
+    if (typeof XLSX === 'undefined') {
+        showNotification('Excel library not loaded. Please refresh and try again.', 'error');
+        return;
+    }
+
+    const wantRevenue   = document.getElementById('rpt-revenue')?.checked !== false;
+    const wantPayments  = document.getElementById('rpt-payments')?.checked !== false;
+    const wantVehicles  = document.getElementById('rpt-vehicles')?.checked !== false;
+    const wantClients   = document.getElementById('rpt-clients')?.checked !== false;
+
+    if (!wantRevenue && !wantPayments && !wantVehicles && !wantClients) {
+        showNotification('Please select at least one report section.', 'warning');
+        return;
+    }
+
+    showNotification('Generating Excel report…', 'info');
+
+    try {
+        const [invoices, clients, payments, vehicles] = await Promise.all([
+            getReportsInvoices(),
+            getReportsClients(),
+            (typeof fetchPaymentsFromSupabase === 'function') ? fetchPaymentsFromSupabase() : Promise.resolve([]),
+            (typeof fetchVehiclesFromSupabase === 'function') ? fetchVehiclesFromSupabase() : Promise.resolve(window.allVehicles || [])
+        ]);
+
+        const wb = XLSX.utils.book_new();
+
+        // ── Revenue Report sheet ────────────────────────────────────────
+        if (wantRevenue) {
+            const months = getLast12MonthKeys();
+            const monthKeys = months.map(m => m.key);
+
+            const revenueByMonth = {};
+            payments.forEach(p => {
+                const dateStr = p.paymentDate || p.payment_date || p.date || p.created_at || '';
+                const dt = new Date(dateStr);
+                if (Number.isNaN(dt.getTime())) return;
+                const key = `${dt.getFullYear()}-${String(dt.getMonth() + 1).padStart(2, '0')}`;
+                if (!monthKeys.includes(key)) return;
+                revenueByMonth[key] = (revenueByMonth[key] || 0) + normalizeReportMoney(p.paidAmount ?? p.amount ?? 0);
+            });
+
+            const billedByMonth = {};
+            invoices.forEach(inv => {
+                const key = getInvoiceMonthKey(inv);
+                if (!monthKeys.includes(key)) return;
+                billedByMonth[key] = (billedByMonth[key] || 0) + normalizeReportMoney(inv.totalAmount ?? inv.total_amount ?? inv.total);
+            });
+
+            const rows = [['Month', 'Billed (PKR)', 'Collected (PKR)']];
+            months.forEach(m => {
+                rows.push([m.label, billedByMonth[m.key] || 0, revenueByMonth[m.key] || 0]);
+            });
+            const ws = XLSX.utils.aoa_to_sheet(rows);
+            XLSX.utils.book_append_sheet(wb, ws, 'Revenue Report');
+        }
+
+        // ── Payment Collections sheet ───────────────────────────────────
+        if (wantPayments) {
+            const rows = [['Receipt #', 'Client', 'Date', 'Method', 'Amount (PKR)']];
+            [...payments]
+                .sort((a, b) => new Date(b.paymentDate || b.date || b.created_at || '') - new Date(a.paymentDate || a.date || a.created_at || ''))
+                .forEach(p => {
+                    rows.push([
+                        p.receiptNo || p.paymentNo || '',
+                        p.clientName || p.client_name || '',
+                        formatDate(p.paymentDate || p.payment_date || p.date || p.created_at || ''),
+                        p.paymentMethod || p.payment_method || '',
+                        normalizeReportMoney(p.paidAmount ?? p.amount ?? 0)
+                    ]);
+                });
+            const ws = XLSX.utils.aoa_to_sheet(rows);
+            XLSX.utils.book_append_sheet(wb, ws, 'Payment Collections');
+        }
+
+        // ── Vehicle Details sheet ───────────────────────────────────────
+        if (wantVehicles) {
+            const activeVehicles = vehicles.filter(v => String(v.status || '').toLowerCase() !== 'archived');
+            const rows = [['Reg No', 'Make', 'Model', 'Year', 'Client', 'Fleet', 'IMEI', 'SIM No', 'Status', 'Installation Date']];
+            activeVehicles.forEach(v => {
+                rows.push([
+                    v.registrationNo || v.registrationno || '',
+                    v.make || v.vehicleMake || '',
+                    v.model || v.vehicleModel || '',
+                    v.year || '',
+                    v.clientName || v.clientname || '',
+                    v.category || v.fleet || '',
+                    v.imeiNo || v.imeino || '',
+                    v.simNo || v.simno || '',
+                    v.status || '',
+                    v.installationDate || v.installationdate || ''
+                ]);
+            });
+            const ws = XLSX.utils.aoa_to_sheet(rows);
+            XLSX.utils.book_append_sheet(wb, ws, 'Vehicle Details');
+        }
+
+        // ── Client Summary sheet ────────────────────────────────────────
+        if (wantClients) {
+            const billedByClient = {};
+            const collectedByClient = {};
+            invoices.forEach(inv => {
+                const name = String(inv.clientName || '').trim();
+                if (!name) return;
+                billedByClient[name] = (billedByClient[name] || 0) + normalizeReportMoney(inv.totalAmount ?? inv.total_amount ?? inv.total);
+                collectedByClient[name] = (collectedByClient[name] || 0) + normalizeReportMoney(inv.paidAmount ?? inv.paid_amount ?? 0);
+            });
+
+            const rows = [['Client', 'Status', 'Phone', 'Email', 'Address', 'Billed (PKR)', 'Collected (PKR)', 'Balance (PKR)']];
+            clients.forEach(c => {
+                const name = String(c.name || '').trim();
+                const billed = billedByClient[name] || 0;
+                const collected = collectedByClient[name] || 0;
+                rows.push([
+                    name,
+                    c.status || '',
+                    c.phone || '',
+                    c.email || '',
+                    c.address || '',
+                    billed,
+                    collected,
+                    Math.max(billed - collected, 0)
+                ]);
+            });
+            const ws = XLSX.utils.aoa_to_sheet(rows);
+            XLSX.utils.book_append_sheet(wb, ws, 'Client Summary');
+        }
+
+        const fileName = `conectia-report-${new Date().toISOString().slice(0, 10)}.xlsx`;
+        XLSX.writeFile(wb, fileName);
+        showNotification('Excel report downloaded.', 'success');
+    } catch (err) {
+        console.error('Excel report error:', err);
+        showNotification('Could not generate Excel report.', 'error');
+    }
 }
