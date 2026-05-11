@@ -675,18 +675,31 @@ function calculateDashboardMetrics(dataStore = getDashboardStore(), selectedMont
     const clients = Array.isArray(dataStore.clients) ? dataStore.clients : [];
     const invoices = Array.isArray(dataStore.invoices) ? dataStore.invoices : [];
     const vehicles = Array.isArray(dataStore.vehicles) ? dataStore.vehicles : [];
-    
-    // Calculate total clients
-    const totalClients = clients.length || 0;
-    
+
+    // End-of-month cutoff for the selected month (inclusive)
+    const [selYear, selMonth] = (selectedMonthKey || '').split('-').map(Number);
+    const monthEndCutoff = new Date(selYear, selMonth, 1); // first day of next month = exclusive upper bound
+
+    // Total clients added on or before the end of the selected month
+    const totalClients = clients.filter(c => {
+        const d = getRecordDate(c, ['created_at', 'createdAt', 'dateAdded', 'addedAt', 'created']);
+        if (!d) return true; // no date info — always count it
+        return d < monthEndCutoff;
+    }).length || 0;
+
     // Calculate new clients in selected month
     const newClients = clients.filter(c => {
         const createdDate = getRecordDate(c, ['created_at', 'createdAt', 'dateAdded', 'addedAt', 'created']);
         return isDateInMonthKey(createdDate, selectedMonthKey);
     }).length || 0;
-    
-    // Calculate total vehicles
-    const activeVehicles = vehicles.length || 0;
+
+    // Total vehicles added on or before the end of the selected month
+    const activeVehicles = vehicles.filter(v => {
+        const d = getRecordDate(v, ['installationDate', 'installDate', 'install_date', 'created_at', 'createdAt', 'dateAdded']);
+        if (!d) return true; // no date info — always count it
+        return d < monthEndCutoff;
+    }).length || 0;
+
     const newVehicles = vehicles.filter((v) => {
         const addedDate = getRecordDate(v, ['installationDate', 'installDate', 'install_date', 'created_at', 'createdAt', 'dateAdded']);
         return isDateInMonthKey(addedDate, selectedMonthKey);
