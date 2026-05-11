@@ -466,14 +466,14 @@ async function loadVehicles() {
                         <i class="fas fa-file-import"></i>
                         Import Excel
                     </button>` : ''}
+                    <button class="btn" style="background: var(--gray-200); white-space: nowrap;" onclick="downloadVehicleImportTemplate()" title="Download Import Template" aria-label="Download Import Template">
+                        <i class="fas fa-file-download"></i>
+                        Download Template
+                    </button>
                 </div>
                 <button class="btn" style="background: var(--gray-200);" onclick="toggleVehicleImportAction()" title="More actions" aria-label="More actions">
                     <i class="fas fa-ellipsis-v"></i>
                     More
-                </button>
-                <button class="btn" style="background: var(--gray-200); white-space: nowrap;" onclick="downloadVehicleImportTemplate()" title="Download Import Template" aria-label="Download Import Template">
-                    <i class="fas fa-file-download"></i>
-                    Download Template
                 </button>
                 <button class="btn btn-primary btn-export" onclick="exportVehiclesPDF()" title="Export PDF" aria-label="Export PDF">
                     <i class="fas fa-file-pdf"></i>
