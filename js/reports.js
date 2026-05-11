@@ -25,16 +25,16 @@ async function loadReports() {
                 <div class="card-body" style="padding-top: 10px;">
                     <div id="report-options" style="display: grid; grid-template-columns: repeat(2, minmax(140px, 1fr)); gap: 8px 12px;">
                         <label style="display: flex; align-items: center; gap: 8px; margin: 0;">
-                            <input type="checkbox" id="rpt-revenue" checked> Revenue Report
+                            <input type="checkbox" id="rpt-revenue"> Revenue Report
                         </label>
                         <label style="display: flex; align-items: center; gap: 8px; margin: 0;">
-                            <input type="checkbox" id="rpt-payments" checked> Payment Collections
+                            <input type="checkbox" id="rpt-payments"> Payment Collections
                         </label>
                         <label style="display: flex; align-items: center; gap: 8px; margin: 0;">
-                            <input type="checkbox" id="rpt-vehicles" checked> Vehicle Details
+                            <input type="checkbox" id="rpt-vehicles"> Vehicle Details
                         </label>
                         <label style="display: flex; align-items: center; gap: 8px; margin: 0;">
-                            <input type="checkbox" id="rpt-clients" checked> Client Summary
+                            <input type="checkbox" id="rpt-clients"> Client Summary
                         </label>
                     </div>
                 </div>
@@ -1324,10 +1324,10 @@ async function generatePDFReport() {
         return;
     }
 
-    const wantRevenue   = document.getElementById('rpt-revenue')?.checked !== false;
-    const wantPayments  = document.getElementById('rpt-payments')?.checked !== false;
-    const wantVehicles  = document.getElementById('rpt-vehicles')?.checked !== false;
-    const wantClients   = document.getElementById('rpt-clients')?.checked !== false;
+    const wantRevenue   = !!document.getElementById('rpt-revenue')?.checked;
+    const wantPayments  = !!document.getElementById('rpt-payments')?.checked;
+    const wantVehicles  = !!document.getElementById('rpt-vehicles')?.checked;
+    const wantClients   = !!document.getElementById('rpt-clients')?.checked;
 
     if (!wantRevenue && !wantPayments && !wantVehicles && !wantClients) {
         showNotification('Please select at least one report section.', 'warning');
@@ -1526,10 +1526,10 @@ async function generateExcelReport() {
         return;
     }
 
-    const wantRevenue   = document.getElementById('rpt-revenue')?.checked !== false;
-    const wantPayments  = document.getElementById('rpt-payments')?.checked !== false;
-    const wantVehicles  = document.getElementById('rpt-vehicles')?.checked !== false;
-    const wantClients   = document.getElementById('rpt-clients')?.checked !== false;
+    const wantRevenue   = !!document.getElementById('rpt-revenue')?.checked;
+    const wantPayments  = !!document.getElementById('rpt-payments')?.checked;
+    const wantVehicles  = !!document.getElementById('rpt-vehicles')?.checked;
+    const wantClients   = !!document.getElementById('rpt-clients')?.checked;
 
     if (!wantRevenue && !wantPayments && !wantVehicles && !wantClients) {
         showNotification('Please select at least one report section.', 'warning');
