@@ -216,7 +216,6 @@ window.fetchClientsFromSupabase = fetchClientsFromSupabase;
 async function saveClientToSupabase(client) {
     const normalizedDefaultUnitPrice = Number(client.defaultUnitPrice ?? client.default_unit_price ?? 0);
     const normalizedStatus = normalizeClientStatus(client.status);
-    const statusAsBoolean = toClientStatusBoolean(normalizedStatus);
 
     const buildSnakeCasePayload = (source, statusPatch = {}) => ({
         clientid: source.clientId,
@@ -241,15 +240,11 @@ async function saveClientToSupabase(client) {
             address: client.address,
             ntn: client.ntn,
             status: normalizedStatus,
-            is_active: statusAsBoolean,
             default_unit_price: normalizedDefaultUnitPrice
         },
-        buildSnakeCasePayload(client, { status: normalizedStatus, is_active: statusAsBoolean }),
         buildSnakeCasePayload(client, { status: normalizedStatus }),
         buildSnakeCasePayload(client, { client_status: normalizedStatus }),
         buildSnakeCasePayload(client, { clientStatus: normalizedStatus }),
-        buildSnakeCasePayload(client, { is_active: statusAsBoolean }),
-        buildSnakeCasePayload(client, { isActive: statusAsBoolean }),
         { ...client }
     ];
 
@@ -390,7 +385,6 @@ function escapeHtmlClients(value) {
 async function updateClientInSupabase(clientId, updates) {
     const normalizedDefaultUnitPrice = Number(updates.defaultUnitPrice ?? updates.default_unit_price ?? 0);
     const normalizedStatus = normalizeClientStatus(updates.status);
-    const statusAsBoolean = toClientStatusBoolean(normalizedStatus);
 
     const basePayload = {
         clientid: updates.clientId,
@@ -402,16 +396,10 @@ async function updateClientInSupabase(clientId, updates) {
         default_unit_price: normalizedDefaultUnitPrice
     };
 
-    // Include both text status and boolean is_active so both columns stay in sync.
-    // Ordering: unified payload first (covers tables with status column),
-    // then fallbacks for tables that only have is_active / other variants.
     const statusPatches = [
-        { status: normalizedStatus, is_active: statusAsBoolean },
         { status: normalizedStatus },
         { client_status: normalizedStatus },
-        { clientStatus: normalizedStatus },
-        { is_active: statusAsBoolean },
-        { isActive: statusAsBoolean }
+        { clientStatus: normalizedStatus }
     ];
 
     const candidatePayloads = statusPatches.map((statusPatch) => ({
