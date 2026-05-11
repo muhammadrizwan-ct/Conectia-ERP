@@ -1199,6 +1199,11 @@ function editVehicle(vehicleId) {
             
             <form onsubmit="saveEditedVehicle(event, '${escapeJsVehicleId(targetId)}')" style="display: grid; grid-template-columns: 1fr 1fr; gap: 16px;">
                 <div>
+                    <label style="display: block; margin-bottom: 6px; font-weight: 600;">Vehicle Name *</label>
+                    <input type="text" id="edit-vehicle-name" value="${escapeHtmlVehicles(vehicle.vehicleName || '')}" placeholder="Enter vehicle name" required style="width: 100%; padding: 10px; border: 1px solid var(--gray-300); border-radius: 4px; box-sizing: border-box;">
+                </div>
+
+                <div>
                     <label style="display: block; margin-bottom: 6px; font-weight: 600;">Registration No *</label>
                     <input type="text" id="edit-vehicle-reg" value="${vehicle.registrationNo}" placeholder="e.g., GUJ-234" required style="width: 100%; padding: 10px; border: 1px solid var(--gray-300); border-radius: 4px; box-sizing: border-box;">
                 </div>
@@ -1257,6 +1262,16 @@ function editVehicle(vehicleId) {
                         <option value="Maintenance" ${vehicle.status === 'Maintenance' ? 'selected' : ''}>Maintenance</option>
                     </select>
                 </div>
+
+                <div>
+                    <label style="display: block; margin-bottom: 6px; font-weight: 600;">Unit Rate (PKR)</label>
+                    <input type="number" id="edit-vehicle-rate" value="${vehicle.unitRate || vehicle.monthlyRate || ''}" min="0" step="0.01" placeholder="Enter rate in rupees" style="width: 100%; padding: 10px; border: 1px solid var(--gray-300); border-radius: 4px; box-sizing: border-box;">
+                </div>
+
+                <div style="grid-column: 1 / -1;">
+                    <label style="display: block; margin-bottom: 6px; font-weight: 600;">Notes</label>
+                    <textarea id="edit-vehicle-notes" placeholder="Add any additional notes" style="width: 100%; padding: 10px; border: 1px solid var(--gray-300); border-radius: 4px; box-sizing: border-box; min-height: 60px;">${escapeHtmlVehicles(vehicle.notes || '')}</textarea>
+                </div>
                 
                 <div style="grid-column: 1 / -1; display: flex; gap: 12px; margin-top: 20px;">
                     <button type="submit" class="btn btn-primary" style="flex: 1;">
@@ -1270,12 +1285,15 @@ function editVehicle(vehicleId) {
     
     document.body.appendChild(modal);
     applyInputConstraints({
+        'edit-vehicle-name': 'name',
         'edit-vehicle-reg': 'regNumber',
         'edit-vehicle-brand': 'brand',
         'edit-vehicle-model': 'model',
         'edit-vehicle-year': 'year',
         'edit-vehicle-imei': 'imei',
-        'edit-vehicle-sim': 'sim'
+        'edit-vehicle-sim': 'sim',
+        'edit-vehicle-rate': 'amount',
+        'edit-vehicle-notes': 'notes'
     });
     
     // Set selected values - client first, then load fleets
@@ -1344,18 +1362,24 @@ async function updateVehicleInSupabase(vehicleId, updates) {
     // Compact-lowercase first (matches the INSERT schema), snake_case as fallback
     const candidatePayloads = [
         {
+            vehicle_name: updates.vehicleName || null,
             registrationno: updates.registrationNo,
             brand: updates.brand,
             model: updates.model,
+            modelyear: updates.modelYear || updates.year || null,
             category: updates.category || updates.type,
             clientname: updates.clientName,
             status: updates.status,
             imeino: updates.imeiNo,
             simno: updates.simNo,
-            installationdate: updates.installationDate || updates.installDate || null
+            installationdate: updates.installationDate || updates.installDate || null,
+            unit_rate: updates.unitRate || null,
+            monthly_rate: updates.monthlyRate || null,
+            notes: updates.notes || null
         },
         {
             registration_no: updates.registrationNo,
+            vehicle_name: updates.vehicleName || null,
             brand: updates.brand,
             model: updates.model,
             model_year: updates.modelYear || updates.year || null,
@@ -1368,6 +1392,8 @@ async function updateVehicleInSupabase(vehicleId, updates) {
             sim_no: updates.simNo,
             install_date: updates.installDate || updates.installationDate || null,
             installation_date: updates.installationDate || updates.installDate || null,
+            unit_rate: updates.unitRate || null,
+            monthly_rate: updates.monthlyRate || null,
             notes: updates.notes || null
         }
     ];
@@ -1417,6 +1443,7 @@ async function saveEditedVehicle(event, vehicleId) {
     }
     
     const registrationNo = document.getElementById('edit-vehicle-reg').value.trim();
+    const vehicleName = document.getElementById('edit-vehicle-name').value.trim();
     const brand = document.getElementById('edit-vehicle-brand').value.trim();
     const model = document.getElementById('edit-vehicle-model').value.trim();
     const year = parseInt(document.getElementById('edit-vehicle-year').value, 10);
@@ -1426,6 +1453,8 @@ async function saveEditedVehicle(event, vehicleId) {
     const imeiNo = document.getElementById('edit-vehicle-imei').value.trim();
     const simNo = document.getElementById('edit-vehicle-sim').value.trim();
     const status = document.getElementById('edit-vehicle-status').value;
+    const unitRate = parseFloat(document.getElementById('edit-vehicle-rate').value) || 0;
+    const notes = document.getElementById('edit-vehicle-notes').value.trim();
     const resolvedCategory = (category || '').trim() || 'default';
     
     if (!registrationNo || !brand || !model || !clientName) {
@@ -1465,6 +1494,7 @@ async function saveEditedVehicle(event, vehicleId) {
         
         window.allVehicles[vehicleIndex] = {
             ...window.allVehicles[vehicleIndex],
+            vehicleName: vehicleName,
             registrationNo: registrationNo,
             brand: brand,
             model: model,
@@ -1477,7 +1507,10 @@ async function saveEditedVehicle(event, vehicleId) {
             installationDate: finalInstallDate,
             imeiNo: imeiNo,
             simNo: simNo,
-            status: status
+            status: status,
+            unitRate: unitRate || window.allVehicles[vehicleIndex].unitRate || 0,
+            monthlyRate: unitRate || window.allVehicles[vehicleIndex].monthlyRate || 0,
+            notes: notes
         };
     }
     
