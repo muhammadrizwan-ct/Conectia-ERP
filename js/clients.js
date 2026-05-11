@@ -709,11 +709,15 @@ function renderVendorsTab(contentEl) {
     `;
 
     const vendors = typeof loadVendorsFromStorage === 'function' ? loadVendorsFromStorage() : [];
+    // Assign sequential VD IDs to any vendor missing one, based on max existing VD number
     let updated = false;
-    vendors.forEach((vendor, index) => {
+    vendors.forEach((vendor) => {
         if (!vendor.vendorId) {
-            const fallbackId = vendor.id || index + 1;
-            vendor.vendorId = `VD${String(fallbackId).padStart(3, '0')}`;
+            const maxNum = vendors.reduce((max, v) => {
+                const num = parseInt(String(v.vendorId || '').replace(/^VD/i, ''), 10);
+                return Number.isFinite(num) ? Math.max(max, num) : max;
+            }, 0);
+            vendor.vendorId = `VD${String(maxNum + 1).padStart(3, '0')}`;
             updated = true;
         }
     });
@@ -843,6 +847,16 @@ function displayVendorsTable(vendors) {
     const canEditData = Auth.hasFeaturePermission('clients', 'edit');
     const canDeleteData = Auth.hasFeaturePermission('clients', 'delete');
     if (!container) return;
+
+    // Sort by VD number ascending so sequence is always maintained
+    vendors = [...(vendors || [])].sort((a, b) => {
+        const numA = parseInt(String(a.vendorId || '').replace(/^VD/i, ''), 10);
+        const numB = parseInt(String(b.vendorId || '').replace(/^VD/i, ''), 10);
+        if (Number.isFinite(numA) && Number.isFinite(numB)) return numA - numB;
+        if (Number.isFinite(numA)) return -1;
+        if (Number.isFinite(numB)) return 1;
+        return String(a.vendorId || '').localeCompare(String(b.vendorId || ''));
+    });
 
     if (!vendors || vendors.length === 0) {
         container.innerHTML = `

@@ -3205,7 +3205,11 @@ function loadVendorPaymentsFromStorage() {
 
 function getNextVendorId(vendors) {
     const list = vendors || [];
-    return list.reduce((max, v) => Math.max(max, v.id || 0), 0) + 1;
+    const maxNum = list.reduce((max, v) => {
+        const num = parseInt(String(v.vendorId || '').replace(/^VD/i, ''), 10);
+        return Number.isFinite(num) ? Math.max(max, num) : max;
+    }, 0);
+    return maxNum + 1;
 }
 
 function filterPayments(searchTerm) {
