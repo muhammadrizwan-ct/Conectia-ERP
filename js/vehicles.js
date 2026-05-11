@@ -1944,6 +1944,15 @@ function handleVehicleImportFile(event) {
                     console.error('Failed to reload vehicles after import:', reloadError);
                     window.allVehicles.push(...savedVehicles);
                 }
+
+                // Auto-register new fleet names per client from imported rows
+                savedVehicles.forEach((v) => {
+                    const clientName = String(v.clientName || '').trim();
+                    const fleet = String(v.category || v.type || '').trim();
+                    if (clientName && fleet && fleet !== 'default') {
+                        addClientFleet(clientName, fleet);
+                    }
+                });
             }
 
             applyFilters();
