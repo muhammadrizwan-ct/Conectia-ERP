@@ -4612,6 +4612,23 @@ function syncVendorInvoiceBalancesFromPayments() {
 
     saveVendorInvoicesForPayments(updatedInvoices);
 
+    // Persist updated status/paidAmount/balance to Supabase for changed invoices
+    if (typeof saveVendorInvoiceToSupabase === 'function') {
+        updatedInvoices.forEach((inv) => {
+            const orig = vendorInvoices.find(
+                (o) => getVendorInvoiceMatchKey(o.vendorName, o.invoiceNo) ===
+                       getVendorInvoiceMatchKey(inv.vendorName, inv.invoiceNo)
+            );
+            const statusChanged = !orig || orig.status !== inv.status ||
+                                  orig.paidAmount !== inv.paidAmount;
+            if (statusChanged && inv.invoiceNo) {
+                saveVendorInvoiceToSupabase(inv).catch((e) =>
+                    console.warn('vendor invoice status sync error:', e)
+                );
+            }
+        });
+    }
+
     // If vendor invoices tab is currently open, refresh it immediately
     if (window.invoiceActiveTab === 'vendor' && typeof loadVendorInvoices === 'function') {
         loadVendorInvoices();
