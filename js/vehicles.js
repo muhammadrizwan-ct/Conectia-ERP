@@ -1303,6 +1303,94 @@ function updateEditFleetDropdown() {
     fleetSelect.required = true;
 }
 
+async function updateVehicleInSupabase(vehicleId, updates) {
+    const uuid = String(vehicleId || '').trim();
+    if (!uuid) {
+        console.error('updateVehicleInSupabase: no vehicle ID');
+        return false;
+    }
+
+    const SUPA_URL = CONFIG.SUPABASE_URL;
+    const SUPA_KEY = CONFIG.SUPABASE_ANON_KEY;
+
+    let authToken = SUPA_KEY;
+    try {
+        const { data: sessionData } = await supabase.auth.getSession();
+        if (sessionData?.session?.access_token) {
+            authToken = sessionData.session.access_token;
+        }
+    } catch (e) { /* fallback to anon key */ }
+
+    const headers = {
+        'Content-Type': 'application/json',
+        'apikey': SUPA_KEY,
+        'Authorization': `Bearer ${authToken}`,
+        'Prefer': 'return=minimal'
+    };
+    const url = `${SUPA_URL}/rest/v1/vehicles?id=eq.${encodeURIComponent(uuid)}`;
+
+    // Try snake_case first (standard Supabase), then compact lowercase fallback
+    const candidatePayloads = [
+        {
+            registration_no: updates.registrationNo,
+            brand: updates.brand,
+            model: updates.model,
+            model_year: updates.modelYear || updates.year || null,
+            year: updates.year || updates.modelYear || null,
+            type: updates.type || updates.category,
+            category: updates.category || updates.type,
+            client_name: updates.clientName,
+            status: updates.status,
+            imei_no: updates.imeiNo,
+            sim_no: updates.simNo,
+            install_date: updates.installDate || updates.installationDate || null,
+            installation_date: updates.installationDate || updates.installDate || null,
+            notes: updates.notes || null
+        },
+        {
+            registrationno: updates.registrationNo,
+            brand: updates.brand,
+            model: updates.model,
+            category: updates.category || updates.type,
+            clientname: updates.clientName,
+            status: updates.status,
+            imeino: updates.imeiNo,
+            simno: updates.simNo,
+            installationdate: updates.installationDate || updates.installDate || null
+        }
+    ];
+
+    for (const rawPayload of candidatePayloads) {
+        const payload = Object.fromEntries(
+            Object.entries(rawPayload).filter(([, v]) => v !== undefined && v !== null && v !== '')
+        );
+
+        let attempt = 0;
+        while (attempt < 15) {
+            const resp = await fetch(url, { method: 'PATCH', headers, body: JSON.stringify(payload) });
+            if (resp.ok || resp.status === 204) return true;
+
+            let errText = '';
+            try { errText = await resp.text(); } catch (e) {}
+
+            const colMatch = errText.match(/Could not find the '([^']+)' column/i) ||
+                             errText.match(/"([^"]+)" does not exist/i);
+            if (!colMatch) {
+                console.error('updateVehicleInSupabase PATCH error:', resp.status, errText);
+                break; // try next candidate payload
+            }
+
+            const badCol = colMatch[1];
+            const matchingKey = Object.keys(payload).find(k => k.toLowerCase() === badCol.toLowerCase());
+            if (!matchingKey) break;
+            delete payload[matchingKey];
+            attempt++;
+        }
+    }
+
+    return false;
+}
+
 async function saveEditedVehicle(event, vehicleId) {
     event.preventDefault();
 
@@ -1381,8 +1469,12 @@ async function saveEditedVehicle(event, vehicleId) {
     // Close modal
     document.getElementById('edit-vehicle-modal').remove();
 
+    // Persist to Supabase
+    const updatedVehicle = window.allVehicles.find(v => toComparableVehicleId(v.id) === targetId) || {};
+    await updateVehicleInSupabase(updatedVehicle.id, updatedVehicle);
+
     // Audit log: vehicle update
-    await logVehicleAudit('update', window.allVehicles.find(v => toComparableVehicleId(v.id) === targetId) || {});
+    await logVehicleAudit('update', updatedVehicle);
 
     // Show success message
     showNotification('Vehicle updated successfully!', 'success');
