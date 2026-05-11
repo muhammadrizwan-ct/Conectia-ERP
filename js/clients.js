@@ -66,24 +66,25 @@ function normalizeClientStatus(status) {
 }
 
 function resolveClientStatus(client = {}) {
-    const rawStatus = client.status
-        ?? client.client_status
-        ?? client.clientStatus
-        ?? client.is_active
-        ?? client.isActive;
-
-    if (typeof rawStatus === 'boolean') {
-        return rawStatus ? 'Active' : 'Inactive';
+    // 1. Prefer explicit text status columns (supports Active/Inactive/Demo)
+    const textStatus = client.status ?? client.client_status ?? client.clientStatus;
+    if (textStatus !== undefined && textStatus !== null && String(textStatus).trim() !== '') {
+        return normalizeClientStatus(textStatus);
     }
 
-    if (rawStatus === undefined || rawStatus === null || String(rawStatus).trim() === '') {
-        const storedStatus = getStoredClientStatus(client);
-        if (storedStatus) {
-            return storedStatus;
-        }
+    // 2. Check localStorage — catches Demo when DB only has is_active boolean
+    const storedStatus = getStoredClientStatus(client);
+    if (storedStatus) {
+        return storedStatus;
     }
 
-    return normalizeClientStatus(rawStatus);
+    // 3. Fall back to boolean is_active
+    const boolStatus = client.is_active ?? client.isActive;
+    if (typeof boolStatus === 'boolean') {
+        return boolStatus ? 'Active' : 'Inactive';
+    }
+
+    return 'Active';
 }
 
 function toClientStatusBoolean(status) {
