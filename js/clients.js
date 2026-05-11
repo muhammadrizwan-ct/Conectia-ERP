@@ -393,71 +393,50 @@ async function updateClientInSupabase(clientId, updates) {
 
     const SUPA_URL = CONFIG.SUPABASE_URL;
     const SUPA_KEY = CONFIG.SUPABASE_ANON_KEY;
-    const authToken = (window.API && window.API.token) ? window.API.token : SUPA_KEY;
+
+    // Get the live JWT session token (not the anon key — RLS requires authenticated)
+    let authToken = SUPA_KEY;
+    try {
+        const { data: sessionData } = await supabase.auth.getSession();
+        if (sessionData?.session?.access_token) {
+            authToken = sessionData.session.access_token;
+        }
+    } catch (e) { /* fallback to anon key */ }
+
     const headers = {
         'Content-Type': 'application/json',
         'apikey': SUPA_KEY,
-        'Authorization': `Bearer ${authToken}`
+        'Authorization': `Bearer ${authToken}`,
+        'Prefer': 'return=minimal'
     };
     const url = `${SUPA_URL}/rest/v1/clients?id=eq.${encodeURIComponent(uuid)}`;
 
-    // Step 1: update core fields (name/email/phone/address/ntn)
-    const coreFields = {
+    const fullPayload = {
         name: updates.name,
         email: updates.email || null,
         phone: updates.phone || null,
         address: updates.address || null,
-        ntn: updates.ntn || null
+        ntn: updates.ntn || null,
+        status: normalizedStatus
     };
-    try {
-        await fetch(url, {
-            method: 'PATCH',
-            headers: { ...headers, 'Prefer': 'return=minimal' },
-            body: JSON.stringify(coreFields)
-        });
-    } catch (e) {
-        console.error('Core fields PATCH failed:', e);
-    }
 
-    // Step 2: update status via direct SQL using supabase.rpc
-    // This runs real SQL on the DB, bypassing PostgREST schema cache entirely.
-    // Requires the update_client_status function to be created in Supabase.
-    let statusSavedViaRpc = false;
     try {
-        const { error: rpcError } = await supabase.rpc('update_client_status', {
-            p_client_id: uuid,
-            p_status: normalizedStatus
+        const resp = await fetch(url, {
+            method: 'PATCH', headers,
+            body: JSON.stringify(fullPayload)
         });
-        if (!rpcError) {
-            statusSavedViaRpc = true;
-        } else {
-            console.warn('RPC update_client_status error:', rpcError.message,
-                '— Make sure to run the RPC migration in Supabase SQL Editor.');
+        if (!resp.ok) {
+            const errText = await resp.text();
+            console.error('updateClientInSupabase PATCH error:', resp.status, errText);
+            return null;
         }
     } catch (e) {
-        console.warn('RPC call failed:', e);
+        console.error('updateClientInSupabase PATCH exception:', e);
+        return null;
     }
 
-    // Step 3: verify what was actually saved in the DB
-    try {
-        const checkResp = await fetch(
-            `${SUPA_URL}/rest/v1/clients?id=eq.${encodeURIComponent(uuid)}&select=id,name,status`,
-            { headers: { 'apikey': SUPA_KEY, 'Authorization': `Bearer ${authToken}` } }
-        );
-        if (checkResp.ok) {
-            const rows = await checkResp.json();
-            const saved = rows && rows[0];
-            console.log('[ClientUpdate] DB state after save —',
-                'name:', saved?.name,
-                '| status in DB:', saved?.status,
-                '| status we sent:', normalizedStatus,
-                '| RPC used:', statusSavedViaRpc
-            );
-        }
-    } catch (e) { /* verification is best-effort */ }
-
-    await logClientAudit('update', { ...updates, ...coreFields, status: normalizedStatus });
-    return { ...updates, ...coreFields, status: normalizedStatus };
+    await logClientAudit('update', { ...updates, ...fullPayload });
+    return { ...updates, ...fullPayload };
 }
 
 async function updateClientInSupabase_unused(clientId, updates) {
