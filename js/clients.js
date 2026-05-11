@@ -889,7 +889,7 @@ function displayVendorsTable(vendors) {
         const safeVendorPhone = escapeHtmlClients(vendor.phone || '-');
         const safeVendorNtn = escapeHtmlClients(vendor.ntn || '-');
         const safeVendorStatus = escapeHtmlClients(vendor.status || 'Active');
-        const vendorPrimaryId = escapeJsSingleQuote(vendor.id);
+        const vendorPrimaryId = escapeJsSingleQuote(vendor.supabaseId || vendor.id);
         html += '<tr>';
         html += `<td><strong style="color: #1976d2; font-weight: 700;">${safeVendorId}</strong></td>`;
         html += `<td><strong>${safeVendorName}</strong></td>`;
@@ -1397,7 +1397,7 @@ function editVendor(vendorId) {
     }
 
     const vendors = window.allVendors || [];
-    const vendor = vendors.find(v => v.id === vendorId);
+    const vendor = vendors.find(v => String(v.supabaseId || v.id) === String(vendorId));
     if (!vendor) {
         alert('Vendor not found');
         return;
@@ -1498,7 +1498,7 @@ function updateVendor(event, vendorId) {
     }
 
     const vendors = window.allVendors || [];
-    const vendorIndex = vendors.findIndex(v => v.id === vendorId);
+    const vendorIndex = vendors.findIndex(v => String(v.supabaseId || v.id) === String(vendorId));
     if (vendorIndex !== -1) {
         vendors[vendorIndex] = {
             ...vendors[vendorIndex],  // preserves supabaseId, vendorId, id
@@ -1545,7 +1545,7 @@ function deleteVendor(vendorId) {
     }
 
     const vendors = window.allVendors || [];
-    const vendor = vendors.find(v => v.id === vendorId);
+    const vendor = vendors.find(v => String(v.supabaseId || v.id) === String(vendorId));
     if (!vendor) {
         alert('Vendor not found');
         return;
@@ -1588,8 +1588,8 @@ function confirmDeleteVendor(vendorId) {
         return;
     }
 
-    const vendorToDelete = (window.allVendors || []).find((v) => v.id === vendorId);
-    window.allVendors = (window.allVendors || []).filter(v => v.id !== vendorId);
+    const vendorToDelete = (window.allVendors || []).find((v) => String(v.supabaseId || v.id) === String(vendorId));
+    window.allVendors = (window.allVendors || []).filter(v => String(v.supabaseId || v.id) !== String(vendorId));
     if (typeof saveVendorsToStorage === 'function') {
         saveVendorsToStorage();
     }
