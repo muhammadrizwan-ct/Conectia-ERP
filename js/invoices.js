@@ -1601,25 +1601,71 @@ function updateInvoicesSummary(invoices) {
 }
 
 async function loadVendorInvoices() {
-    syncVendorInvoiceStatusesFromPayments();
     let invoices = loadVendorInvoicesFromStorage() || [];
+    let payments = [];
 
     if (supabase) {
         try {
-            const supabaseInvoices = await fetchVendorInvoicesFromSupabase();
+            // Fetch both invoices and payments from Supabase in parallel
+            const [supabaseInvoices, supabasePaymentsRaw] = await Promise.all([
+                fetchVendorInvoicesFromSupabase(),
+                supabase.from('vendor_payments').select('vendor_name,invoice_no,amount,tax_deduction')
+            ]);
+
             if (supabaseInvoices.length > 0) {
                 invoices = supabaseInvoices;
-                vendorInvoicesData = invoices;
-                window.vendorInvoicesData = invoices;
-                saveVendorInvoicesToStorage();
             }
+
+            const supabasePayments = (supabasePaymentsRaw.data || []).map((p) => ({
+                vendorName: p.vendor_name || '',
+                invoiceNo: p.invoice_no || '',
+                amount: Number(p.amount) || 0
+            }));
+
+            // Also merge with locally-stored payments in case Supabase sync is behind
+            const localPaymentsRaw = localStorage.getItem(STORAGE_KEYS.VENDOR_PAYMENTS);
+            const localPayments = localPaymentsRaw ? JSON.parse(localPaymentsRaw) : [];
+            payments = [...supabasePayments, ...localPayments];
         } catch (err) {
-            console.warn('Could not load vendor invoices from Supabase, using localStorage:', err);
+            console.warn('Could not load vendor data from Supabase, using localStorage:', err);
+            const localPaymentsRaw = localStorage.getItem(STORAGE_KEYS.VENDOR_PAYMENTS);
+            payments = localPaymentsRaw ? JSON.parse(localPaymentsRaw) : [];
         }
+    } else {
+        const localPaymentsRaw = localStorage.getItem(STORAGE_KEYS.VENDOR_PAYMENTS);
+        payments = localPaymentsRaw ? JSON.parse(localPaymentsRaw) : [];
+    }
+
+    // Compute correct status from payments (covers both pre-existing and new payments)
+    const makeKey = (v, i) => `${String(v || '').trim().toLowerCase()}__${String(i || '').trim().toLowerCase()}`;
+    const paidByInvoice = {};
+    payments.forEach((p) => {
+        if (!p?.vendorName || !p?.invoiceNo) return;
+        const key = makeKey(p.vendorName, p.invoiceNo);
+        paidByInvoice[key] = (paidByInvoice[key] || 0) + (Number(p.amount) || 0);
+    });
+
+    invoices = invoices.map((invoice) => {
+        const key = makeKey(invoice.vendorName, invoice.invoiceNo);
+        const totalPaid = paidByInvoice[key] || 0;
+        const totalAmount = Number(invoice.amount) || 0;
+        const balance = Math.max(totalAmount - totalPaid, 0);
+        const status = balance <= 0 ? 'Paid' : totalPaid > 0 ? 'Partial' : invoice.status || 'Pending';
+        return { ...invoice, paidAmount: totalPaid, balance, status };
+    });
+
+    // Persist status updates back to Supabase for any that changed
+    if (supabase && typeof saveVendorInvoiceToSupabase === 'function') {
+        invoices.forEach((inv) => {
+            if ((inv.status === 'Paid' || inv.status === 'Partial') && inv.invoiceNo) {
+                saveVendorInvoiceToSupabase(inv).catch(() => {});
+            }
+        });
     }
 
     vendorInvoicesData = invoices;
     window.vendorInvoicesData = invoices;
+    saveVendorInvoicesToStorage();
     displayVendorInvoicesTable(invoices);
 }
 
