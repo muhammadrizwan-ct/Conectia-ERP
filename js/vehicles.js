@@ -466,6 +466,10 @@ async function loadVehicles() {
                         <i class="fas fa-file-import"></i>
                         Import Excel
                     </button>` : ''}
+                    <button class="btn" style="background: var(--gray-200); white-space: nowrap;" onclick="downloadVehicleImportTemplate()" title="Download Import Template" aria-label="Download Import Template">
+                        <i class="fas fa-file-download"></i>
+                        Download Template
+                    </button>
                 </div>
                 <button class="btn" style="background: var(--gray-200);" onclick="toggleVehicleImportAction()" title="More actions" aria-label="More actions">
                     <i class="fas fa-ellipsis-v"></i>
@@ -1646,6 +1650,56 @@ function openVehicleImportPicker() {
 
     fileInput.value = '';
     fileInput.click();
+}
+
+function downloadVehicleImportTemplate() {
+    if (typeof XLSX === 'undefined') {
+        showNotification('Excel library not loaded. Please refresh the page.', 'error');
+        return;
+    }
+
+    const headers = [
+        'Vehicle Name',
+        'Client Name',
+        'Registration No',
+        'Brand',
+        'Model',
+        'Model Year',
+        'Fleet Name',
+        'IMEI Number',
+        'SIM Number',
+        'Date of Addition',
+        'Unit Rate (PKR)',
+        'Status',
+        'Notes'
+    ];
+
+    const sampleRow = [
+        'Truck-01',
+        'ABC Logistics',
+        'ABC-1234',
+        'Toyota',
+        'Hilux',
+        2022,
+        'Fleet A',
+        '123456789012345',
+        '03001234567',
+        '2024-01-15',
+        5000,
+        'Active',
+        'Optional notes here'
+    ];
+
+    const ws = XLSX.utils.aoa_to_sheet([headers, sampleRow]);
+
+    // Column widths
+    ws['!cols'] = headers.map((h) => ({ wch: Math.max(h.length + 4, 18) }));
+
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, 'Vehicles Template');
+
+    XLSX.writeFile(wb, 'Vehicle_Import_Template.xlsx');
+    showNotification('Template downloaded! Fill it in and use Import Excel to upload.', 'success');
 }
 
 function toggleVehicleImportAction() {
