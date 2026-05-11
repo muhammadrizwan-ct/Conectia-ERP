@@ -457,18 +457,15 @@ async function loadVehicles() {
         <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 24px;">
             <h3>Vehicle Management</h3>
             <div style="display: flex; gap: 8px; flex-wrap: nowrap; align-items: center; margin-left: auto;">
-                <div id="vehicle-import-action" style="display: flex; gap: 8px; overflow: hidden; max-width: 0; opacity: 0; transition: max-width 0.25s ease, opacity 0.25s ease; align-items: center; flex-wrap: nowrap;">
-                    <button class="btn" style="background: var(--gray-200); white-space: nowrap;" onclick="showArchivedVehiclesModal()" title="Archived Vehicles" aria-label="Archived Vehicles">
-                        <i class="fas fa-archive"></i>
-                        Archived Vehicles
+                <div id="vehicle-import-action" style="display: flex; gap: 6px; overflow: hidden; max-width: 0; opacity: 0; transition: max-width 0.3s ease, opacity 0.25s ease; align-items: center; flex-wrap: nowrap;">
+                    <button class="btn" style="background: var(--gray-200); white-space: nowrap; padding: 6px 10px; font-size: 13px;" onclick="showArchivedVehiclesModal()" title="Archived Vehicles" aria-label="Archived Vehicles">
+                        <i class="fas fa-archive"></i> Archived
                     </button>
-                    ${canEditData ? `<button class="btn btn-success" style="white-space: nowrap;" onclick="openVehicleImportPicker()" title="Import Excel" aria-label="Import Excel">
-                        <i class="fas fa-file-import"></i>
-                        Import Excel
+                    ${canEditData ? `<button class="btn btn-success" style="white-space: nowrap; padding: 6px 10px; font-size: 13px;" onclick="openVehicleImportPicker()" title="Import Excel" aria-label="Import Excel">
+                        <i class="fas fa-file-import"></i> Import
                     </button>` : ''}
-                    <button class="btn" style="background: var(--gray-200); white-space: nowrap;" onclick="downloadVehicleImportTemplate()" title="Download Import Template" aria-label="Download Import Template">
-                        <i class="fas fa-file-download"></i>
-                        Download Template
+                    <button class="btn" style="background: var(--gray-200); white-space: nowrap; padding: 6px 10px; font-size: 13px;" onclick="downloadVehicleImportTemplate()" title="Download Import Template" aria-label="Download Import Template">
+                        <i class="fas fa-file-download"></i> Template
                     </button>
                 </div>
                 <button class="btn" style="background: var(--gray-200);" onclick="toggleVehicleImportAction()" title="More actions" aria-label="More actions">
@@ -1714,7 +1711,7 @@ function toggleVehicleImportAction() {
         return;
     }
 
-    actionContainer.style.maxWidth = '460px';
+    actionContainer.style.maxWidth = '560px';
     actionContainer.style.opacity = '1';
     actionContainer.dataset.open = 'true';
 }
