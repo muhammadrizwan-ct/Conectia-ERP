@@ -878,6 +878,7 @@ function buildVendorLedgerRows(invoices, payments) {
 
     (payments || []).forEach((payment) => {
         const amount = Number(payment.amount) || 0;
+        const taxDeduction = Number(payment.taxDeduction ?? payment.tax_deduction ?? 0) || 0;
         const vendorName = payment.vendorName || 'Vendor';
         const paymentType = payment.method || 'N/A';
         const reference = payment.reference || '-';
@@ -888,7 +889,7 @@ function buildVendorLedgerRows(invoices, payments) {
             details: `Payment to ${vendorName} (${paymentType}, Ref: ${reference})`,
             debit: amount,
             credit: 0,
-            taxDeduction: 0
+            taxDeduction
         });
     });
 
@@ -993,7 +994,7 @@ function displayVendorLedgerTable(rows) {
         html += `<td style="width: 25%;">${row.details}</td>`;
         html += `<td style="width: 12%; color: ${row.debit > 0 ? 'var(--danger)' : 'var(--gray-500)'}; font-weight: 700;">${row.debit > 0 ? formatPKR(row.debit) : '-'}</td>`;
         html += `<td style="width: 12%; color: ${row.credit > 0 ? 'var(--success)' : 'var(--gray-500)'}; font-weight: 700;">${row.credit > 0 ? formatPKR(row.credit) : '-'}</td>`;
-        html += `<td style="width: 13%; color: var(--gray-500); font-weight: 700;">-</td>`;
+        html += `<td style="width: 13%; color: ${taxDeduction > 0 ? 'var(--danger)' : 'var(--gray-500)'}; font-weight: 700;">${taxDeduction > 0 ? '- ' + formatPKR(taxDeduction) : '-'}</td>`;
         html += `<td style="width: 13%; color: ${runningBalance >= 0 ? 'var(--gray-800)' : 'var(--danger)'}; font-weight: 700;">${formatPKR(runningBalance)}</td>`;
         html += '</tr>';
     });
@@ -1005,7 +1006,7 @@ function displayVendorLedgerTable(rows) {
     html += '<td colspan="3" style="width: 50%; text-align: right; padding: 12px; font-weight: 700;">Total:</td>';
     html += `<td style="width: 12%; color: var(--danger); font-weight: 700;">${formatPKR(totalDebit)}</td>`;
     html += `<td style="width: 12%; color: var(--success); font-weight: 700;">${formatPKR(totalCredit)}</td>`;
-    html += `<td style="width: 13%; color: var(--gray-500); font-weight: 700;">-</td>`;
+    html += `<td style="width: 13%; color: ${totalTax > 0 ? 'var(--danger)' : 'var(--gray-500)'}; font-weight: 700;">${totalTax > 0 ? '- ' + formatPKR(totalTax) : '-'}</td>`;
     html += `<td style="width: 13%; color: ${runningBalance >= 0 ? 'var(--gray-800)' : 'var(--danger)'}; font-weight: 700;">${formatPKR(runningBalance)}</td>`;
     html += '</tr></tfoot></table></div>';
 
