@@ -2947,11 +2947,11 @@ function generateProfessionalInvoiceHTML(invoice) {
                     <tr>
                         <td style="text-align: center; font-weight: 700;">-</td>
                         <td style="font-weight: 700; text-align: right;">Subtotal:</td>
-                        ${invoice.invoiceType === 'category-details' ? '' : `<td style="text-align: center; font-weight: 700;">${invoice.items && invoice.items.length ? invoice.items.filter(item => item.isCustomItem).reduce((sum, item) => sum + (item.quantity || 1), 0) : '-'}</td>`}
-                        <td style="text-align: right; font-weight: 700;">${invoice.items && invoice.items.length ? formatPKRForInvoice(invoice.items.filter(item => item.isCustomItem).reduce((sum, item) => sum + (item.unitPrice || item.monthlyRate || 0), 0)) : '-'}</td>
-                        <td style="text-align: right; font-weight: 700;">${invoice.items && invoice.items.length ? formatPKRForInvoice(invoice.items.filter(item => item.isCustomItem).reduce((sum, item) => sum + ((item.unitPrice || item.monthlyRate || 0) * (item.quantity || 1)), 0)) : '-'}</td>
-                        <td style="text-align: right; font-weight: 700;">${invoice.items && invoice.items.length ? formatPKRForInvoice(invoice.items.filter(item => item.isCustomItem).reduce((sum, item) => sum + (item.customTaxAmount != null ? item.customTaxAmount : (((item.unitPrice || item.monthlyRate || 0) * (item.quantity || 1)) * CONFIG.TAX_RATE)), 0)) : formatPKRForInvoice(taxAmount)}</td>
-                        <td style="text-align: right; font-weight: 700;">${invoice.items && invoice.items.length ? formatPKRForInvoice(invoice.items.filter(item => item.isCustomItem).reduce((sum, item) => sum + ((item.unitPrice || item.monthlyRate || 0) * (item.quantity || 1) + (item.customTaxAmount != null ? item.customTaxAmount : (((item.unitPrice || item.monthlyRate || 0) * (item.quantity || 1)) * CONFIG.TAX_RATE))), 0)) : formatPKRForInvoice(subtotal + taxAmount)}</td>
+                        ${invoice.invoiceType === 'category-details' ? '' : `<td style="text-align: center; font-weight: 700;">${invoice.items && invoice.items.length ? invoice.items.reduce((sum, item) => sum + (item.quantity || 1), 0) : '-'}</td>`}
+                        <td style="text-align: right; font-weight: 700;">${invoice.items && invoice.items.length ? formatPKRForInvoice(invoice.items.reduce((sum, item) => sum + (item.unitPrice || item.monthlyRate || 0), 0)) : '-'}</td>
+                        <td style="text-align: right; font-weight: 700;">${invoice.items && invoice.items.length ? formatPKRForInvoice(invoice.items.reduce((sum, item) => sum + ((item.unitPrice || item.monthlyRate || 0) * (item.quantity || 1)), 0)) : '-'}</td>
+                        <td style="text-align: right; font-weight: 700;">${invoice.items && invoice.items.length ? formatPKRForInvoice(invoice.items.reduce((sum, item) => sum + (item.customTaxAmount != null ? item.customTaxAmount : (((item.unitPrice || item.monthlyRate || 0) * (item.quantity || 1)) * CONFIG.TAX_RATE)), 0)) : formatPKRForInvoice(taxAmount)}</td>
+                        <td style="text-align: right; font-weight: 700;">${invoice.items && invoice.items.length ? formatPKRForInvoice(invoice.items.reduce((sum, item) => sum + ((item.unitPrice || item.monthlyRate || 0) * (item.quantity || 1) + (item.customTaxAmount != null ? item.customTaxAmount : (((item.unitPrice || item.monthlyRate || 0) * (item.quantity || 1)) * CONFIG.TAX_RATE))), 0)) : formatPKRForInvoice(subtotal + taxAmount)}</td>
                     </tr>
                 </tfoot>
             </table>
@@ -3057,6 +3057,7 @@ function generateInvoiceItemsRows(invoice) {
                                      ${vehiclesLine}
                                  </td>`;
                     rows += `<td style="text-align: right;">${formatPKR(categoryTotal)}</td>`;
+                    rows += `<td style="text-align: right;">${formatPKR(categoryTotal)}</td>`;
                     rows += `<td style="text-align: right;">${formatPKR(categoryTax)}</td>`;
                 rows += `<td style="text-align: right; font-weight: 600;">${formatPKR(categoryAmount)}</td>`;
                 rows += `</tr>`;
@@ -3076,6 +3077,7 @@ function generateInvoiceItemsRows(invoice) {
                                      <span style="font-size: 9px; color: #6b7280;">${item.brand || ''} ${item.model || ''} - ${item.category || 'N/A'}</span>
                                  </td>`;
                      rows += `<td style="text-align: center;">1</td>`;
+                     rows += `<td style="text-align: right;">${formatPKR(itemUnitPrice)}</td>`;
                      rows += `<td style="text-align: right;">${formatPKR(itemUnitPrice)}</td>`;
                      rows += `<td style="text-align: right;">${formatPKR(itemTax)}</td>`;
                      rows += `<td style="text-align: right; font-weight: 600;">${formatPKR(itemAmount)}</td>`;
@@ -3109,6 +3111,8 @@ function generateInvoiceItemsRows(invoice) {
         rows += `<tr>`;
         rows += `<td style="text-align: center;">1</td>`;
         rows += `<td><strong>Vehicle Tracking Services</strong><br><span style="font-size: 10px; color: #6b7280;">Monthly Fleet Management - ${invoice.month || 'Current Month'}</span></td>`;
+        rows += `<td style="text-align: center;">1</td>`;
+        rows += `<td style="text-align: right;">${formatPKRForInvoice(baseUnitPrice)}</td>`;
         rows += `<td style="text-align: right;">${formatPKRForInvoice(baseUnitPrice)}</td>`;
         rows += `<td style="text-align: right;">${formatPKRForInvoice(baseTaxAmount)}</td>`;
         rows += `<td style="text-align: right;">${formatPKRForInvoice(baseAmount)}</td>`;
