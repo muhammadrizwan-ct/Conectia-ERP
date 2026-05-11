@@ -1480,6 +1480,16 @@ function displayInvoices(invoices) {
     const canDeleteInvoices = Auth.hasFeaturePermission('invoices', 'delete');
     const canManageInvoices = Boolean(permissions.canManageInvoices);
     const canManagePayments = Boolean(permissions.canManagePayments);
+
+    // Sort by invoice number descending so sequence is always maintained (newest/highest first)
+    invoices = [...(invoices || [])].sort((a, b) => {
+        const numA = parseInt(String(a.invoiceNo || a.invoice_no || '').replace(/^CT/i, ''), 10);
+        const numB = parseInt(String(b.invoiceNo || b.invoice_no || '').replace(/^CT/i, ''), 10);
+        if (Number.isFinite(numA) && Number.isFinite(numB)) return numB - numA;
+        if (Number.isFinite(numA)) return -1;
+        if (Number.isFinite(numB)) return 1;
+        return String(b.invoiceNo || '').localeCompare(String(a.invoiceNo || ''));
+    });
     
     if (!invoices || invoices.length === 0) {
         document.getElementById('invoices-table').innerHTML = `

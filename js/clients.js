@@ -757,6 +757,17 @@ function displayClientsTable(clients) {
     const container = document.getElementById('clients-table-container');
     const canEditData = Auth.hasFeaturePermission('clients', 'edit');
     const canDeleteData = Auth.hasFeaturePermission('clients', 'delete');
+
+    // Sort by CT number ascending so sequence is always maintained
+    const sorted = [...(clients || [])].sort((a, b) => {
+        const numA = parseInt(String(a.clientId || a.clientid || '').replace(/^CT/i, ''), 10);
+        const numB = parseInt(String(b.clientId || b.clientid || '').replace(/^CT/i, ''), 10);
+        if (Number.isFinite(numA) && Number.isFinite(numB)) return numA - numB;
+        if (Number.isFinite(numA)) return -1;
+        if (Number.isFinite(numB)) return 1;
+        return String(a.clientId || '').localeCompare(String(b.clientId || ''));
+    });
+    clients = sorted;
     
     if (!clients || clients.length === 0) {
         container.innerHTML = `
