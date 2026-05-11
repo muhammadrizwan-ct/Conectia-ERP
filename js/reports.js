@@ -1451,8 +1451,8 @@ async function generatePDFReport() {
             const activeVehicles = vehicles.filter(v => String(v.status || '').toLowerCase() !== 'archived');
             const vehicleRows = activeVehicles.map(v => [
                 v.registrationNo || v.registrationno || '-',
-                v.make || v.vehicleMake || '-',
-                v.model || v.vehicleModel || '-',
+                v.brand || v.make || '-',
+                v.model || '-',
                 v.clientName || v.clientname || '-',
                 v.category || v.fleet || '-',
                 v.status || '-'
@@ -1603,9 +1603,9 @@ async function generateExcelReport() {
             activeVehicles.forEach(v => {
                 rows.push([
                     v.registrationNo || v.registrationno || '',
-                    v.make || v.vehicleMake || '',
-                    v.model || v.vehicleModel || '',
-                    v.year || '',
+                    v.brand || v.make || '',
+                    v.model || '',
+                    v.modelYear || v.year || '',
                     v.clientName || v.clientname || '',
                     v.category || v.fleet || '',
                     v.imeiNo || v.imeino || '',
