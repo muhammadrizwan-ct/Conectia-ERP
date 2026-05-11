@@ -1366,7 +1366,7 @@ async function updateVehicleInSupabase(vehicleId, updates) {
             registrationno: updates.registrationNo,
             brand: updates.brand,
             model: updates.model,
-            modelyear: updates.modelYear || updates.year || null,
+            model_year: updates.modelYear || updates.year || null,
             category: updates.category || updates.type,
             clientname: updates.clientName,
             status: updates.status,
