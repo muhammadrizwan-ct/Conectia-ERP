@@ -1275,21 +1275,14 @@ async function updateClient(event, clientId) {
         ...(updatedRow || {})
     }, updatedClientPayload.status);
 
-    // Update local array immediately with what we saved (don't re-fetch — stale schema cache
-    // can cause re-fetch to return old status value, overwriting the just-saved status)
+    // Update local array immediately with the saved data — no re-fetch.
+    // A background re-fetch races with the RPC and can return the old status
+    // before the DB commit is visible, overwriting the correct value.
     window.allClients[clientIndex] = {
         ...window.allClients[clientIndex],
         ...updatedClientPayload,
         ...updatedRow
     };
-
-    // Background re-fetch to sync any other changes (won't overwrite local status)
-    fetchClientsFromSupabase().then(freshClients => {
-        if (Array.isArray(freshClients) && freshClients.length > 0) {
-            window.allClients = freshClients;
-            displayClientsTable(window.allClients);
-        }
-    }).catch(() => {});
 
     // Update table
     displayClientsTable(window.allClients);
