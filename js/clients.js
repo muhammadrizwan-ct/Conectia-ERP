@@ -391,37 +391,43 @@ async function updateClientInSupabase(clientId, updates) {
         return null;
     }
 
-    // Step 1: Update all fields except status (these columns are stable in PostgREST cache)
-    const corePayload = {
+    const SUPA_URL = CONFIG.SUPABASE_URL;
+    const SUPA_KEY = CONFIG.SUPABASE_ANON_KEY;
+    const authToken = (window.API && window.API.token) ? window.API.token : SUPA_KEY;
+
+    // Update core fields + status together via raw fetch — bypasses supabase-js schema cache entirely
+    const fullPayload = {
         name: updates.name,
-        email: updates.email,
+        email: updates.email || null,
         phone: updates.phone || null,
         address: updates.address || null,
-        ntn: updates.ntn || null
+        ntn: updates.ntn || null,
+        status: normalizedStatus
     };
 
-    const { error: coreError } = await supabase
-        .from('clients')
-        .update(corePayload)
-        .eq('id', uuid);
+    try {
+        const resp = await fetch(`${SUPA_URL}/rest/v1/clients?id=eq.${encodeURIComponent(uuid)}`, {
+            method: 'PATCH',
+            headers: {
+                'Content-Type': 'application/json',
+                'apikey': SUPA_KEY,
+                'Authorization': `Bearer ${authToken}`,
+                'Prefer': 'return=minimal'
+            },
+            body: JSON.stringify(fullPayload)
+        });
 
-    if (coreError) {
-        console.error('updateClientInSupabase core error:', coreError.message);
+        if (!resp.ok) {
+            const errText = await resp.text();
+            console.error('updateClientInSupabase fetch error:', resp.status, errText);
+            return null;
+        }
+    } catch (e) {
+        console.error('updateClientInSupabase fetch exception:', e);
         return null;
     }
 
-    // Step 2: Update status via RPC (bypasses PostgREST schema cache, guaranteed to work)
-    const { error: rpcError } = await supabase.rpc('update_client_status', {
-        p_client_id: uuid,
-        p_status: normalizedStatus
-    });
-
-    if (rpcError) {
-        console.error('updateClientInSupabase RPC status error:', rpcError.message);
-        // Still return core update as success — status failed, but other fields saved
-    }
-
-    const updatedRow = { ...updates, ...corePayload, status: normalizedStatus };
+    const updatedRow = { ...updates, ...fullPayload };
     await logClientAudit('update', updatedRow);
     return updatedRow;
 }
