@@ -287,18 +287,17 @@ async function populateReportsClientFilter() {
     const filterEl = document.getElementById('reports-client-filter');
     if (!filterEl) return;
 
-    const invoices = await getReportsInvoices();
     const clients = await getReportsClients();
-    const names = new Set();
 
-    invoices.forEach((inv) => {
-        if (inv?.clientName) names.add(String(inv.clientName).trim());
-    });
-    clients.forEach((client) => {
-        if (client?.name) names.add(String(client.name).trim());
-    });
+    // Only include non-demo clients in the dropdown
+    const validClientNames = new Set(
+        clients
+            .filter((c) => String(c?.status || '').toLowerCase() !== 'demo')
+            .map((c) => String(c?.name || '').trim())
+            .filter(Boolean)
+    );
 
-    const sortedNames = Array.from(names).filter(Boolean).sort((a, b) => a.localeCompare(b));
+    const sortedNames = Array.from(validClientNames).sort((a, b) => a.localeCompare(b));
     const currentValue = filterEl.value;
 
     filterEl.innerHTML = '<option value="">All Clients</option>';
@@ -398,15 +397,25 @@ async function renderClientMonthStatusReport() {
     })));
 
     const allClientNames = new Set();
+    // Build a map of client name → status to drive inactive styling & demo exclusion
+    const clientStatusMap = {};
     clients.forEach((client) => {
         const name = String(client?.name || '').trim();
         if (!name) return;
+        clientStatusMap[name] = String(client?.status || 'active').toLowerCase();
+    });
+
+    clients.forEach((client) => {
+        const name = String(client?.name || '').trim();
+        if (!name) return;
+        if (clientStatusMap[name] === 'demo') return;           // skip demo
         if (selectedClient && name !== selectedClient) return;
         allClientNames.add(name);
     });
     filteredInvoices.forEach((inv) => {
         const name = String(inv?.clientName || '').trim();
         if (!name) return;
+        if (clientStatusMap[name] === 'demo') return;           // skip demo
         if (selectedClient && name !== selectedClient) return;
         allClientNames.add(name);
     });
@@ -447,6 +456,11 @@ async function renderClientMonthStatusReport() {
     html += '</tr></thead><tbody>';
 
     clientNames.forEach((clientName) => {
+        const status = clientStatusMap[clientName] || 'active';
+        const isInactive = status === 'inactive';
+        const rowStyle = isInactive
+            ? 'height: 42px; opacity: 0.4; filter: grayscale(60%);'
+            : 'height: 42px;';
         const clientInvoices = filteredInvoices.filter((inv) => String(inv.clientName || '').trim() === clientName);
         const byMonth = {};
 
@@ -460,7 +474,7 @@ async function renderClientMonthStatusReport() {
         const clientPaidTotal = clientInvoices.reduce((sum, inv) => sum + normalizeReportMoney(inv.paidAmount), 0);
         const clientPendingTotal = clientInvoices.reduce((sum, inv) => sum + normalizeReportMoney(inv.balance), 0);
 
-        html += '<tr style="height: 42px;">';
+        html += `<tr style="${rowStyle}">`;
         html += `<td><strong>${clientName}</strong></td>`;
 
         months.forEach((m) => {
