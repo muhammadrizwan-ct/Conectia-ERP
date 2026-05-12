@@ -2791,7 +2791,7 @@ function displayPaymentsTable(payments) {
         html += `<td style="width: 9%; text-align: right; white-space: nowrap;">${formatPKR(invoiceAmount)}</td>`;
         html += `<td style="width: 9%; text-align: right; color: var(--success); font-weight: 700; white-space: nowrap;">${formatPKR(netAmount)}</td>`;
         html += `<td style="width: 8%; text-align: center;"><span class="badge" style="background: #e3f2fd; color: #1976d2; font-size: 11px; padding: 4px 8px; display: inline-block; max-width: 100%; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">${payment.method}</span></td>`;
-        html += `<td style="width: 7%; text-align: center; white-space: nowrap;">${payment.paymentDate || '-'}</td>`;
+        html += `<td style="width: 7%; text-align: center; white-space: nowrap;">${payment.paymentDate ? formatDate(payment.paymentDate) : '-'}</td>`;
         
         const safePaymentId = String(payment.id || '').replace(/\\/g, '\\\\').replace(/'/g, "\\'");
         let actionButtons = '';
@@ -3373,7 +3373,7 @@ function displayVendorPaymentsTable(payments) {
         const amount = Number(payment.amount || 0);
         const rowId = escapeJsSingleQuotePayment(payment.id);
         totalAmount += amount;
-        const safePaymentDate = escapeHtmlPayments(payment.paymentDate || '-');
+        const safePaymentDate = escapeHtmlPayments(payment.paymentDate ? formatDate(payment.paymentDate) : '-');
         const safeVendorName = escapeHtmlPayments(payment.vendorName || '-');
         const safeInvoiceNo = escapeHtmlPayments(payment.invoiceNo || '-');
         const safeInvoiceMonth = escapeHtmlPayments(payment.invoiceMonth || '-');
