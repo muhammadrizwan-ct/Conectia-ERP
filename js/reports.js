@@ -87,7 +87,7 @@ async function loadReports() {
                         <option value="yearly">Yearly</option>
                     </select>
                 </div>
-                <div class="card-body">
+                <div class="card-body" style="position: relative; height: 300px;">
                     <canvas id="revenue-report-chart"></canvas>
                 </div>
             </div>
@@ -96,7 +96,7 @@ async function loadReports() {
                 <div class="card-header">
                     <h3>Client Distribution</h3>
                 </div>
-                <div class="card-body">
+                <div class="card-body" style="position: relative; height: 300px;">
                     <canvas id="client-distribution-chart"></canvas>
                 </div>
             </div>
@@ -194,6 +194,38 @@ function normalizeMonthKey(monthLabel) {
     }
 
     return '';
+}
+
+// Robust month key resolver: when month label has no year, infer from invoiceDate
+// and find the nearest matching month within the provided validKeys window.
+function getInvoiceMonthKeyRobust(invoice, validKeys) {
+    // 1. Try the standard resolver first (handles full "March 2026" labels perfectly)
+    const standard = getInvoiceMonthKey(invoice);
+    if (standard && (!validKeys || validKeys.includes(standard))) return standard;
+
+    // 2. If standard returned a key but it's outside the window, try to fix the year
+    //    by checking if the same month exists in the previous year within validKeys.
+    if (standard && validKeys) {
+        const [yr, mo] = standard.split('-');
+        const prevYearKey = `${Number(yr) - 1}-${mo}`;
+        if (validKeys.includes(prevYearKey)) return prevYearKey;
+    }
+
+    // 3. If there's a valid invoiceDate, derive the key directly from it
+    const dateCandidates = [
+        invoice?.invoiceDate, invoice?.invoice_date, invoice?.dueDate,
+        invoice?.date, invoice?.created_at, invoice?.createdDate
+    ];
+    for (const d of dateCandidates) {
+        if (!d) continue;
+        const parsed = new Date(d);
+        if (!Number.isNaN(parsed.getTime())) {
+            const key = `${parsed.getFullYear()}-${String(parsed.getMonth() + 1).padStart(2, '0')}`;
+            if (!validKeys || validKeys.includes(key)) return key;
+        }
+    }
+
+    return standard || '';
 }
 
 function getInvoiceMonthKey(invoice) {
@@ -1185,6 +1217,8 @@ function generateRevenueReportChart() {
         try {
             const ctx = document.getElementById('revenue-report-chart');
             if (!ctx) return;
+            const existingChart = Chart.getChart(ctx);
+            if (existingChart) existingChart.destroy();
             const chartCtx = ctx.getContext('2d');
 
             // Fetch data
@@ -1199,48 +1233,35 @@ function generateRevenueReportChart() {
             const monthLabels = months.map(m => m.label);
             const monthKeys = months.map(m => m.key);
 
-            // Filter active clients
-            const activeClientNames = new Set(
-                clients.filter(c => String(c.status || '').toLowerCase() === 'active').map(c => String(c.name || '').trim())
-            );
-
-            // Expected: sum of invoices for active clients by month
+            // Expected: sum of ALL invoices by month (regardless of client status)
             const expectedByMonth = {};
             invoices.forEach(inv => {
-                const clientName = String(inv.clientName || inv.client_name || '').trim();
-                const monthKey = getInvoiceMonthKey(inv);
-                if (!activeClientNames.has(clientName) || !monthKeys.includes(monthKey)) return;
+                const monthKey = getInvoiceMonthKeyRobust(inv, monthKeys);
+                if (!monthKey || !monthKeys.includes(monthKey)) return;
                 expectedByMonth[monthKey] = (expectedByMonth[monthKey] || 0) + normalizeReportMoney(inv.totalAmount ?? inv.total_amount ?? inv.total);
             });
 
-            // Build actual paid amounts per invoice from payments table
-            const paymentsByInvoiceChart = {};
+            // Revenue: sum of payments by payment date month
+            const revenueByMonth = {};
             payments.forEach(payment => {
-                const amount = normalizeReportMoney(payment.amount ?? payment.netAmount ?? 0);
-                const lineItems = Array.isArray(payment.lineItems) ? payment.lineItems : [];
-                if (lineItems.length > 0) {
-                    lineItems.forEach(item => {
-                        const invNo = String(item.invoiceNo || '').trim();
-                        if (invNo) paymentsByInvoiceChart[invNo] = (paymentsByInvoiceChart[invNo] || 0) + normalizeReportMoney(item.allocatedAmount ?? item.amount ?? 0);
-                    });
-                } else {
-                    const invNo = String(payment.invoiceNo || '').trim();
-                    if (invNo) paymentsByInvoiceChart[invNo] = (paymentsByInvoiceChart[invNo] || 0) + amount;
-                }
+                const dateStr = payment.paymentDate || payment.payment_date || payment.date || payment.created_at || '';
+                const dt = new Date(dateStr);
+                if (Number.isNaN(dt.getTime())) return;
+                const key = `${dt.getFullYear()}-${String(dt.getMonth() + 1).padStart(2, '0')}`;
+                if (!monthKeys.includes(key)) return;
+                revenueByMonth[key] = (revenueByMonth[key] || 0) + normalizeReportMoney(payment.paidAmount ?? payment.amount ?? payment.totalAmount ?? 0);
             });
 
-            // Revenue: group invoice paidAmount by invoice month (matches monthly table)
-            const revenueByMonth = {};
-            invoices.forEach(inv => {
-                const clientName = String(inv.clientName || inv.client_name || '').trim();
-                const monthKey = getInvoiceMonthKey(inv);
-                if (!activeClientNames.has(clientName) || !monthKeys.includes(monthKey)) return;
-                const invNo = String(inv.invoiceNo || '').trim();
-                const invoicePaid = normalizeReportMoney(inv.paidAmount);
-                const paymentsPaid = paymentsByInvoiceChart[invNo] || 0;
-                const actualPaid = Math.max(invoicePaid, paymentsPaid);
-                revenueByMonth[monthKey] = (revenueByMonth[monthKey] || 0) + actualPaid;
-            });
+            // Fallback: if payments table has no data, derive revenue from invoice paidAmounts
+            const totalRevenue = Object.values(revenueByMonth).reduce((s, v) => s + v, 0);
+            if (totalRevenue === 0) {
+                invoices.forEach(inv => {
+                    const monthKey = getInvoiceMonthKeyRobust(inv, monthKeys);
+                    if (!monthKey || !monthKeys.includes(monthKey)) return;
+                    const paid = normalizeReportMoney(inv.paidAmount ?? inv.paid_amount ?? 0);
+                    if (paid > 0) revenueByMonth[monthKey] = (revenueByMonth[monthKey] || 0) + paid;
+                });
+            }
 
             const expectedData = monthKeys.map(key => expectedByMonth[key] || 0);
             const revenueData = monthKeys.map(key => revenueByMonth[key] || 0);
@@ -1296,6 +1317,8 @@ function generateClientDistributionChart() {
         try {
             const ctx = document.getElementById('client-distribution-chart');
             if (!ctx) return;
+            const existingDistChart = Chart.getChart(ctx);
+            if (existingDistChart) existingDistChart.destroy();
             const chartCtx = ctx.getContext('2d');
             // Fetch real clients
             const clients = await getReportsClients();
@@ -1391,28 +1414,14 @@ async function generatePDFReport() {
             const months = getLast12MonthKeys();
             const monthKeys = months.map(m => m.key);
 
-            // Revenue: group invoice paidAmount by invoice month (consistent with monthly table)
             const revenueByMonth = {};
-            const paymentsByInvoicePdf = {};
             payments.forEach(p => {
-                const amount = normalizeReportMoney(p.amount ?? p.netAmount ?? 0);
-                const lineItems = Array.isArray(p.lineItems) ? p.lineItems : [];
-                if (lineItems.length > 0) {
-                    lineItems.forEach(item => {
-                        const invNo = String(item.invoiceNo || '').trim();
-                        if (invNo) paymentsByInvoicePdf[invNo] = (paymentsByInvoicePdf[invNo] || 0) + normalizeReportMoney(item.allocatedAmount ?? item.amount ?? 0);
-                    });
-                } else {
-                    const invNo = String(p.invoiceNo || '').trim();
-                    if (invNo) paymentsByInvoicePdf[invNo] = (paymentsByInvoicePdf[invNo] || 0) + amount;
-                }
-            });
-            invoices.forEach(inv => {
-                const key = getInvoiceMonthKey(inv);
+                const dateStr = p.paymentDate || p.payment_date || p.date || p.created_at || '';
+                const dt = new Date(dateStr);
+                if (Number.isNaN(dt.getTime())) return;
+                const key = `${dt.getFullYear()}-${String(dt.getMonth() + 1).padStart(2, '0')}`;
                 if (!monthKeys.includes(key)) return;
-                const invNo = String(inv.invoiceNo || '').trim();
-                const actualPaid = Math.max(normalizeReportMoney(inv.paidAmount), paymentsByInvoicePdf[invNo] || 0);
-                revenueByMonth[key] = (revenueByMonth[key] || 0) + actualPaid;
+                revenueByMonth[key] = (revenueByMonth[key] || 0) + normalizeReportMoney(p.paidAmount ?? p.amount ?? 0);
             });
 
             const billedByMonth = {};
@@ -1585,28 +1594,14 @@ async function generateExcelReport() {
             const months = getLast12MonthKeys();
             const monthKeys = months.map(m => m.key);
 
-            // Revenue: group invoice paidAmount by invoice month (consistent with monthly table)
             const revenueByMonth = {};
-            const paymentsByInvoiceXls = {};
             payments.forEach(p => {
-                const amount = normalizeReportMoney(p.amount ?? p.netAmount ?? 0);
-                const lineItems = Array.isArray(p.lineItems) ? p.lineItems : [];
-                if (lineItems.length > 0) {
-                    lineItems.forEach(item => {
-                        const invNo = String(item.invoiceNo || '').trim();
-                        if (invNo) paymentsByInvoiceXls[invNo] = (paymentsByInvoiceXls[invNo] || 0) + normalizeReportMoney(item.allocatedAmount ?? item.amount ?? 0);
-                    });
-                } else {
-                    const invNo = String(p.invoiceNo || '').trim();
-                    if (invNo) paymentsByInvoiceXls[invNo] = (paymentsByInvoiceXls[invNo] || 0) + amount;
-                }
-            });
-            invoices.forEach(inv => {
-                const key = getInvoiceMonthKey(inv);
+                const dateStr = p.paymentDate || p.payment_date || p.date || p.created_at || '';
+                const dt = new Date(dateStr);
+                if (Number.isNaN(dt.getTime())) return;
+                const key = `${dt.getFullYear()}-${String(dt.getMonth() + 1).padStart(2, '0')}`;
                 if (!monthKeys.includes(key)) return;
-                const invNo = String(inv.invoiceNo || '').trim();
-                const actualPaid = Math.max(normalizeReportMoney(inv.paidAmount), paymentsByInvoiceXls[invNo] || 0);
-                revenueByMonth[key] = (revenueByMonth[key] || 0) + actualPaid;
+                revenueByMonth[key] = (revenueByMonth[key] || 0) + normalizeReportMoney(p.paidAmount ?? p.amount ?? 0);
             });
 
             const billedByMonth = {};

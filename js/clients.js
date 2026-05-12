@@ -676,19 +676,37 @@ async function renderClientsTab(contentEl) {
             </div>
         </div>
     `;
-    // Fetch from Supabase only
-    try {
-        window.allClients = await fetchClientsFromSupabase();
-    } catch (error) {
-        window.allClients = [];
-        console.error('Error loading clients from Supabase:', error);
-    }
-    try {
-        window.allVehicles = await fetchVehiclesFromSupabase ? await fetchVehiclesFromSupabase() : [];
-    } catch (error) {
-        window.allVehicles = [];
-        console.error('Error loading vehicles for clients from Supabase:', error);
-    }
+    // Fetch clients and vehicles in parallel from Supabase
+    const [clientsResult, vehiclesResult] = await Promise.allSettled([
+        fetchClientsFromSupabase(),
+        fetchVehiclesFromSupabase ? fetchVehiclesFromSupabase() : Promise.resolve([])
+    ]);
+    window.allClients = clientsResult.status === 'fulfilled' ? clientsResult.value : [];
+    if (clientsResult.status === 'rejected') console.error('Error loading clients from Supabase:', clientsResult.reason);
+    window.allVehicles = vehiclesResult.status === 'fulfilled' ? vehiclesResult.value : [];
+    if (vehiclesResult.status === 'rejected') console.error('Error loading vehicles for clients from Supabase:', vehiclesResult.reason);
+
+    // Compute accurate vehicle counts per client (by clientId, fallback to name)
+    const vehicleCountMap = {};
+    (window.allVehicles || []).forEach(v => {
+        const key = v.clientId || v.client_id || null;
+        if (key) {
+            vehicleCountMap[key] = (vehicleCountMap[key] || 0) + 1;
+        } else if (v.clientName) {
+            vehicleCountMap[`name:${String(v.clientName).trim().toLowerCase()}`] =
+                (vehicleCountMap[`name:${String(v.clientName).trim().toLowerCase()}`] || 0) + 1;
+        }
+    });
+    window.allClients = window.allClients.map(client => {
+        const idKey = client.id || client.clientId || client.clientid || null;
+        const nameKey = `name:${String(client.name || '').trim().toLowerCase()}`;
+        const count = (idKey && vehicleCountMap[idKey]) || vehicleCountMap[nameKey] || 0;
+        return { ...client, vehicleCount: count };
+    });
+
+    // Sort clients by vehicle count descending (most vehicles first)
+    window.allClients.sort((a, b) => b.vehicleCount - a.vehicleCount);
+
     displayClientsTable(window.allClients);
 }
 
@@ -804,10 +822,7 @@ function displayClientsTable(clients) {
         const statusText = String(client.status || 'Active');
         const statusClass = `status-${statusText.toLowerCase()}`;
 
-        let vehicleCount = 0;
-        if (window.allVehicles && Array.isArray(window.allVehicles)) {
-            vehicleCount = window.allVehicles.filter(v => v.clientName === client.name).length;
-        }
+        const vehicleCount = Number(client.vehicleCount) || 0;
 
         const safeDisplayClientId = escapeHtmlClients(displayClientId);
         const safeName = escapeHtmlClients(client.name);
