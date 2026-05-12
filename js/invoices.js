@@ -3006,10 +3006,10 @@ function generateProfessionalInvoiceHTML(invoice) {
                         <td style="text-align: center; font-weight: 700;">-</td>
                         <td style="font-weight: 700; text-align: right;">Subtotal:</td>
                         ${invoice.invoiceType === 'category-details' ? '' : `<td style="text-align: center; font-weight: 700;">${invoice.items && invoice.items.length ? invoice.items.reduce((sum, item) => sum + (item.quantity || 1), 0) : '-'}</td>`}
-                        <td style="text-align: right; font-weight: 700;">${invoice.items && invoice.items.length ? formatPKRForInvoice(invoice.items.reduce((sum, item) => sum + (item.unitPrice || item.monthlyRate || 0), 0)) : '-'}</td>
-                        <td style="text-align: right; font-weight: 700;">${invoice.items && invoice.items.length ? formatPKRForInvoice(invoice.items.reduce((sum, item) => sum + ((item.unitPrice || item.monthlyRate || 0) * (item.quantity || 1)), 0)) : '-'}</td>
-                        <td style="text-align: right; font-weight: 700;">${invoice.items && invoice.items.length ? formatPKRForInvoice(invoice.items.reduce((sum, item) => sum + (item.customTaxAmount != null ? item.customTaxAmount : (((item.unitPrice || item.monthlyRate || 0) * (item.quantity || 1)) * CONFIG.TAX_RATE)), 0)) : formatPKRForInvoice(taxAmount)}</td>
-                        <td style="text-align: right; font-weight: 700;">${invoice.items && invoice.items.length ? formatPKRForInvoice(invoice.items.reduce((sum, item) => sum + ((item.unitPrice || item.monthlyRate || 0) * (item.quantity || 1) + (item.customTaxAmount != null ? item.customTaxAmount : (((item.unitPrice || item.monthlyRate || 0) * (item.quantity || 1)) * CONFIG.TAX_RATE))), 0)) : formatPKRForInvoice(subtotal + taxAmount)}</td>
+                        <td style="text-align: right; font-weight: 700;">${invoice.items && invoice.items.length ? formatNumForInvoice(invoice.items.reduce((sum, item) => sum + (item.unitPrice || item.monthlyRate || 0), 0)) : '-'}</td>
+                        <td style="text-align: right; font-weight: 700;">${invoice.items && invoice.items.length ? formatNumForInvoice(invoice.items.reduce((sum, item) => sum + ((item.unitPrice || item.monthlyRate || 0) * (item.quantity || 1)), 0)) : '-'}</td>
+                        <td style="text-align: right; font-weight: 700;">${invoice.items && invoice.items.length ? formatNumForInvoice(invoice.items.reduce((sum, item) => sum + (item.customTaxAmount != null ? item.customTaxAmount : (((item.unitPrice || item.monthlyRate || 0) * (item.quantity || 1)) * CONFIG.TAX_RATE)), 0)) : formatNumForInvoice(taxAmount)}</td>
+                        <td style="text-align: right; font-weight: 700;">${invoice.items && invoice.items.length ? formatNumForInvoice(invoice.items.reduce((sum, item) => sum + ((item.unitPrice || item.monthlyRate || 0) * (item.quantity || 1) + (item.customTaxAmount != null ? item.customTaxAmount : (((item.unitPrice || item.monthlyRate || 0) * (item.quantity || 1)) * CONFIG.TAX_RATE))), 0)) : formatNumForInvoice(subtotal + taxAmount)}</td>
                     </tr>
                 </tfoot>
             </table>
@@ -3114,10 +3114,10 @@ function generateInvoiceItemsRows(invoice) {
                                      <span style="font-size: 9px; color: #6b7280; font-style: italic;">Count: ${categoryItems.length} vehicle${categoryItems.length > 1 ? 's' : ''}</span>
                                      ${vehiclesLine}
                                  </td>`;
-                    rows += `<td style="text-align: right;">${formatPKR(categoryTotal)}</td>`;
-                    rows += `<td style="text-align: right;">${formatPKR(categoryTotal)}</td>`;
-                    rows += `<td style="text-align: right;">${formatPKR(categoryTax)}</td>`;
-                rows += `<td style="text-align: right; font-weight: 600;">${formatPKR(categoryAmount)}</td>`;
+                    rows += `<td style="text-align: right;">${formatNumForInvoice(categoryTotal)}</td>`;
+                    rows += `<td style="text-align: right;">${formatNumForInvoice(categoryTotal)}</td>`;
+                    rows += `<td style="text-align: right;">${formatNumForInvoice(categoryTax)}</td>`;
+                rows += `<td style="text-align: right; font-weight: 600;">${formatNumForInvoice(categoryAmount)}</td>`;
                 rows += `</tr>`;
             });
         } else {
@@ -3135,10 +3135,10 @@ function generateInvoiceItemsRows(invoice) {
                                      <span style="font-size: 9px; color: #6b7280;">${item.brand || ''} ${item.model || ''} - ${item.category || 'N/A'}</span>
                                  </td>`;
                      rows += `<td style="text-align: center;">1</td>`;
-                     rows += `<td style="text-align: right;">${formatPKR(itemUnitPrice)}</td>`;
-                     rows += `<td style="text-align: right;">${formatPKR(itemUnitPrice)}</td>`;
-                     rows += `<td style="text-align: right;">${formatPKR(itemTax)}</td>`;
-                     rows += `<td style="text-align: right; font-weight: 600;">${formatPKR(itemAmount)}</td>`;
+                     rows += `<td style="text-align: right;">${formatNumForInvoice(itemUnitPrice)}</td>`;
+                     rows += `<td style="text-align: right;">${formatNumForInvoice(itemUnitPrice)}</td>`;
+                     rows += `<td style="text-align: right;">${formatNumForInvoice(itemTax)}</td>`;
+                     rows += `<td style="text-align: right; font-weight: 600;">${formatNumForInvoice(itemAmount)}</td>`;
                      rows += `</tr>`;
             });
             customItems.forEach(item => {
@@ -3154,10 +3154,10 @@ function generateInvoiceItemsRows(invoice) {
                             <span style="font-size: 9px; color: #6b7280;">Custom Item</span>
                          </td>`;
                 rows += `<td style="text-align: center;">${qty}</td>`;
-                rows += `<td style="text-align: right;">${formatPKR(itemUnitPrice)}</td>`;
-                rows += `<td style="text-align: right;">${formatPKR(itemSubtotal)}</td>`;
-                rows += `<td style="text-align: right;">${formatPKR(itemTax)}</td>`;
-                rows += `<td style="text-align: right; font-weight: 600;">${formatPKR(itemAmount)}</td>`;
+                rows += `<td style="text-align: right;">${formatNumForInvoice(itemUnitPrice)}</td>`;
+                rows += `<td style="text-align: right;">${formatNumForInvoice(itemSubtotal)}</td>`;
+                rows += `<td style="text-align: right;">${formatNumForInvoice(itemTax)}</td>`;
+                rows += `<td style="text-align: right; font-weight: 600;">${formatNumForInvoice(itemAmount)}</td>`;
                 rows += `</tr>`;
             });
         }
@@ -3170,10 +3170,10 @@ function generateInvoiceItemsRows(invoice) {
         rows += `<td style="text-align: center;">1</td>`;
         rows += `<td><strong>Vehicle Tracking Services</strong><br><span style="font-size: 10px; color: #6b7280;">Monthly Fleet Management - ${invoice.month || 'Current Month'}</span></td>`;
         rows += `<td style="text-align: center;">1</td>`;
-        rows += `<td style="text-align: right;">${formatPKRForInvoice(baseUnitPrice)}</td>`;
-        rows += `<td style="text-align: right;">${formatPKRForInvoice(baseUnitPrice)}</td>`;
-        rows += `<td style="text-align: right;">${formatPKRForInvoice(baseTaxAmount)}</td>`;
-        rows += `<td style="text-align: right;">${formatPKRForInvoice(baseAmount)}</td>`;
+        rows += `<td style="text-align: right;">${formatNumForInvoice(baseUnitPrice)}</td>`;
+        rows += `<td style="text-align: right;">${formatNumForInvoice(baseUnitPrice)}</td>`;
+        rows += `<td style="text-align: right;">${formatNumForInvoice(baseTaxAmount)}</td>`;
+        rows += `<td style="text-align: right;">${formatNumForInvoice(baseAmount)}</td>`;
         rows += `</tr>`;
     }
     
@@ -4233,10 +4233,19 @@ function formatDateForInvoice(dateString) {
     }).replace(/\//g, '-');
 }
 
-// Format PKR for invoice
+// Format PKR for invoice (with prefix - use outside tables)
 function formatPKRForInvoice(amount) {
     if (amount === undefined || amount === null) return 'PKR 0.00';
     return 'PKR ' + parseFloat(amount).toLocaleString('en-PK', {
+        minimumFractionDigits: 2,
+        maximumFractionDigits: 2
+    });
+}
+
+// Format number for invoice table cells (no PKR prefix)
+function formatNumForInvoice(amount) {
+    if (amount === undefined || amount === null) return '0.00';
+    return parseFloat(amount).toLocaleString('en-PK', {
         minimumFractionDigits: 2,
         maximumFractionDigits: 2
     });
