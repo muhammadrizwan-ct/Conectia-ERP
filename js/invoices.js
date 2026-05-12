@@ -1333,12 +1333,18 @@ function loadVendorInvoicesFromStorage() {
 }
 
 function loadVendorsForInvoices() {
+    // First check in-memory cache set by payments.js
+    if (Array.isArray(window.allVendors) && window.allVendors.length > 0) {
+        return window.allVendors;
+    }
     try {
         const saved = localStorage.getItem(STORAGE_KEYS.VENDORS);
-        return saved ? JSON.parse(saved) : [];
+        const parsed = saved ? JSON.parse(saved) : [];
+        if (Array.isArray(parsed) && parsed.length > 0) return parsed;
     } catch (error) {
-        return [];
+        // fall through to empty
     }
+    return [];
 }
 
 function loadClientsFromStorage() {
@@ -1805,14 +1811,28 @@ function filterVendorInvoices() {
     displayVendorInvoicesTable(filtered);
 }
 
-function showRecordVendorInvoiceModal() {
+async function showRecordVendorInvoiceModal() {
     if (!ensureFeaturePermission('invoices', 'generate')) {
         return;
     }
 
-    const vendors = loadVendorsForInvoices();
+    let vendors = loadVendorsForInvoices();
+
+    // If none in cache, try fetching from Supabase
+    if (!vendors.length && supabase && typeof window.fetchVendorsFromSupabase === 'function') {
+        try {
+            vendors = await window.fetchVendorsFromSupabase();
+            if (Array.isArray(vendors) && vendors.length) {
+                window.allVendors = vendors;
+                localStorage.setItem(STORAGE_KEYS.VENDORS, JSON.stringify(vendors));
+            }
+        } catch (e) {
+            console.warn('Could not fetch vendors from Supabase:', e);
+        }
+    }
+
     if (!vendors.length) {
-        showNotification('Please add a vendor first', 'warning');
+        showNotification('Please add a vendor first before recording a vendor invoice.', 'warning');
         return;
     }
 
@@ -1950,156 +1970,6 @@ function saveVendorInvoice(event) {
     // Persist to Supabase in background
     saveVendorInvoiceToSupabase(newInvoice).catch((err) =>
         console.warn('Supabase vendor invoice save failed:', err)
-    );
-}
-
-function showEditVendorInvoiceModal(invoiceNo) {
-    if (!ensureFeaturePermission('invoices', 'generate')) {
-        return;
-    }
-
-    vendorInvoicesData = loadVendorInvoicesFromStorage() || [];
-    const inv = vendorInvoicesData.find(i => i.invoiceNo === invoiceNo);
-    if (!inv) {
-        showNotification('Vendor invoice not found', 'error');
-        return;
-    }
-
-    const vendors = loadVendorsForInvoices();
-    const vendorOptions = vendors
-        .map(v => `<option value="${v.name}" ${v.name === inv.vendorName ? 'selected' : ''}>${v.name}</option>`)
-        .join('');
-
-    const modal = document.createElement('div');
-    modal.id = 'edit-vendor-invoice-modal';
-    modal.style.cssText = `
-        position: fixed;
-        top: 0;
-        left: 0;
-        right: 0;
-        bottom: 0;
-        background: rgba(0, 0, 0, 0.5);
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        z-index: 1000;
-        overflow-y: auto;
-    `;
-
-    const safeOriginalNo = String(inv.invoiceNo).replace(/'/g, "\\'");
-    modal.innerHTML = `
-        <div style="background: white; border-radius: 8px; width: min(95vw, 600px); max-width: 600px; padding: 24px; box-shadow: 0 10px 40px rgba(0,0,0,0.2); margin: 20px 0; box-sizing: border-box;">
-            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px;">
-                <h2 style="margin: 0;">Edit Vendor Invoice</h2>
-                <button onclick="document.getElementById('edit-vendor-invoice-modal').remove()" style="background: none; border: none; font-size: 24px; cursor: pointer; color: var(--gray-500);">×</button>
-            </div>
-            <form onsubmit="updateVendorInvoice(event, '${safeOriginalNo}')" style="display: flex; flex-direction: column; gap: 16px;">
-                <div>
-                    <label style="display: block; margin-bottom: 6px; font-weight: 600;">Vendor *</label>
-                    <select id="edit-vendor-invoice-vendor" required style="width: 100%; padding: 10px; border: 1px solid var(--gray-300); border-radius: 4px; box-sizing: border-box;">
-                        <option value="">Select Vendor</option>
-                        ${vendorOptions}
-                    </select>
-                </div>
-                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 16px;">
-                    <div>
-                        <label style="display: block; margin-bottom: 6px; font-weight: 600;">Invoice No *</label>
-                        <input type="text" id="edit-vendor-invoice-no" value="${inv.invoiceNo || ''}" required style="width: 100%; padding: 10px; border: 1px solid var(--gray-300); border-radius: 4px; box-sizing: border-box;">
-                    </div>
-                    <div>
-                        <label style="display: block; margin-bottom: 6px; font-weight: 600;">Invoice Date</label>
-                        <input type="date" id="edit-vendor-invoice-date" value="${inv.invoiceDate || ''}" style="width: 100%; padding: 10px; border: 1px solid var(--gray-300); border-radius: 4px; box-sizing: border-box;">
-                    </div>
-                </div>
-                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 16px;">
-                    <div>
-                        <label style="display: block; margin-bottom: 6px; font-weight: 600;">Invoice Month</label>
-                        <input type="month" id="edit-vendor-invoice-month" value="${inv.invoiceMonth || ''}" style="width: 100%; padding: 10px; border: 1px solid var(--gray-300); border-radius: 4px; box-sizing: border-box;">
-                    </div>
-                    <div>
-                        <label style="display: block; margin-bottom: 6px; font-weight: 600;">Amount *</label>
-                        <input type="number" id="edit-vendor-invoice-amount" min="0" step="0.01" value="${Number(inv.amount) || 0}" required style="width: 100%; padding: 10px; border: 1px solid var(--gray-300); border-radius: 4px; box-sizing: border-box;">
-                    </div>
-                </div>
-                <div>
-                    <label style="display: block; margin-bottom: 6px; font-weight: 600;">Status</label>
-                    <select id="edit-vendor-invoice-status" style="width: 100%; padding: 10px; border: 1px solid var(--gray-300); border-radius: 4px; box-sizing: border-box;">
-                        <option value="Pending" ${inv.status === 'Pending' ? 'selected' : ''}>Pending</option>
-                        <option value="Partial" ${inv.status === 'Partial' ? 'selected' : ''}>Partial</option>
-                        <option value="Paid" ${inv.status === 'Paid' ? 'selected' : ''}>Paid</option>
-                    </select>
-                </div>
-                <div>
-                    <label style="display: block; margin-bottom: 6px; font-weight: 600;">Notes</label>
-                    <textarea id="edit-vendor-invoice-notes" rows="3" style="width: 100%; padding: 10px; border: 1px solid var(--gray-300); border-radius: 4px; box-sizing: border-box; resize: vertical;">${inv.notes || ''}</textarea>
-                </div>
-                <div style="display: flex; gap: 12px; margin-top: 12px;">
-                    <button type="submit" class="btn btn-primary" style="flex: 1;">Update Invoice</button>
-                    <button type="button" onclick="document.getElementById('edit-vendor-invoice-modal').remove()" class="btn" style="flex: 1; background: var(--gray-200); color: var(--gray-800);">Cancel</button>
-                </div>
-            </form>
-        </div>
-    `;
-
-    document.body.appendChild(modal);
-    applyInputConstraints({
-        'edit-vendor-invoice-no': 'invoiceNo',
-        'edit-vendor-invoice-amount': 'amount',
-        'edit-vendor-invoice-notes': 'notes'
-    });
-}
-
-function updateVendorInvoice(event, originalInvoiceNo) {
-    event.preventDefault();
-
-    const vendorName = document.getElementById('edit-vendor-invoice-vendor').value;
-    const invoiceNo = document.getElementById('edit-vendor-invoice-no').value.trim();
-    const invoiceDate = document.getElementById('edit-vendor-invoice-date').value;
-    const invoiceMonth = document.getElementById('edit-vendor-invoice-month').value;
-    const amount = parseFloat(document.getElementById('edit-vendor-invoice-amount').value) || 0;
-    const status = document.getElementById('edit-vendor-invoice-status').value;
-    const notes = document.getElementById('edit-vendor-invoice-notes').value.trim();
-
-    if (!vendorName || !invoiceNo || amount <= 0) {
-        alert('Please fill in all required fields');
-        return;
-    }
-
-    vendorInvoicesData = loadVendorInvoicesFromStorage() || [];
-
-    if (invoiceNo !== originalInvoiceNo && vendorInvoicesData.some(i => i.invoiceNo === invoiceNo)) {
-        alert('Invoice number already exists');
-        return;
-    }
-
-    vendorInvoicesData = vendorInvoicesData.map(i => {
-        if (i.invoiceNo !== originalInvoiceNo) return i;
-        return {
-            ...i,
-            invoiceNo,
-            vendorName,
-            invoiceDate,
-            invoiceMonth,
-            amount,
-            paidAmount: status === 'Paid' ? amount : (status === 'Pending' ? 0 : i.paidAmount),
-            balance: status === 'Paid' ? 0 : (status === 'Pending' ? amount : i.balance),
-            status,
-            notes
-        };
-    });
-
-    window.vendorInvoicesData = vendorInvoicesData;
-    saveVendorInvoicesToStorage();
-    document.getElementById('edit-vendor-invoice-modal').remove();
-    displayVendorInvoicesTable(vendorInvoicesData);
-    showNotification('Vendor invoice updated successfully!', 'success');
-
-    const updated = vendorInvoicesData.find(i => i.invoiceNo === invoiceNo);
-    if (invoiceNo !== originalInvoiceNo) {
-        deleteVendorInvoiceFromSupabase(originalInvoiceNo).catch(() => {});
-    }
-    saveVendorInvoiceToSupabase(updated).catch((err) =>
-        console.warn('Supabase vendor invoice update failed:', err)
     );
 }
 
