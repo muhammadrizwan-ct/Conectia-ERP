@@ -421,7 +421,12 @@ async function renderBankLedger(contentEl) {
                         <button class="btn btn-sm btn-secondary" onclick="saveBankOpeningBalance()" title="Set Opening Balance" style="white-space: nowrap;">
                             <i class="fas fa-save"></i> Set
                         </button>
-                    </label>` : ''}
+                    </label>` : `
+                    <div style="display: flex; align-items: center; gap: 8px; padding: 6px 12px; background: #f0fdf4; border: 1px solid #bbf7d0; border-radius: 6px;">
+                        <i class="fas fa-university" style="color: #16a34a;"></i>
+                        <span style="font-size: 13px; color: var(--gray-600);">Opening Balance:</span>
+                        <strong style="color: #16a34a;">${formatPKR(savedOpeningBalance)}</strong>
+                    </div>`}
                     <label style="display: flex; align-items: center; gap: 8px;">
                         From Month:
                         <input type="month" id="ledger-month-from" onchange="filterBankLedger()" style="padding: 8px; border: 1px solid var(--gray-300); border-radius: 4px;">
