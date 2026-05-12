@@ -396,7 +396,6 @@ async function renderClientMonthStatusReport() {
         totalAmount: i.totalAmount, paidAmount: i.paidAmount, balance: i.balance, status: i.status
     })));
 
-    const allClientNames = new Set();
     // Build a map of client name → status to drive inactive styling & demo exclusion
     const clientStatusMap = {};
     clients.forEach((client) => {
@@ -405,6 +404,9 @@ async function renderClientMonthStatusReport() {
         clientStatusMap[name] = String(client?.status || 'active').toLowerCase();
     });
 
+    // Only use Supabase clients as the canonical list — never invoice clientName strings
+    // This ensures the count exactly matches what's in the Clients module
+    const allClientNames = new Set();
     clients.forEach((client) => {
         const name = String(client?.name || '').trim();
         if (!name) return;
@@ -412,14 +414,14 @@ async function renderClientMonthStatusReport() {
         if (selectedClient && name !== selectedClient) return;
         allClientNames.add(name);
     });
-    filteredInvoices.forEach((inv) => {
-        const name = String(inv?.clientName || '').trim();
-        if (!name) return;
-        if (clientStatusMap[name] === 'demo') return;           // skip demo
-        if (selectedClient && name !== selectedClient) return;
-        allClientNames.add(name);
+
+    // Sort: active clients first (alphabetically), inactive clients last (alphabetically)
+    const clientNames = Array.from(allClientNames).sort((a, b) => {
+        const aInactive = clientStatusMap[a] === 'inactive';
+        const bInactive = clientStatusMap[b] === 'inactive';
+        if (aInactive !== bInactive) return aInactive ? 1 : -1;
+        return a.localeCompare(b);
     });
-    const clientNames = Array.from(allClientNames).sort((a, b) => a.localeCompare(b));
 
     const totalAmount = filteredInvoices.reduce((sum, inv) => sum + normalizeReportMoney(inv.totalAmount), 0);
     const totalPaid = filteredInvoices.reduce((sum, inv) => sum + normalizeReportMoney(inv.paidAmount), 0);
