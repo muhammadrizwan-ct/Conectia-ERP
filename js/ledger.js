@@ -281,6 +281,8 @@ async function setActiveLedgerTab(tab) {
 async function renderClientLedger(contentEl) {
     if (!contentEl) return;
 
+    const currentMonth = new Date().toISOString().slice(0, 7);
+
     contentEl.innerHTML = `
         <div class="card">
             <div class="card-header">
@@ -291,11 +293,11 @@ async function renderClientLedger(contentEl) {
                     </select>
                     <label style="display: flex; align-items: center; gap: 8px;">
                         From Month:
-                        <input type="month" id="ledger-month-from" onchange="filterClientLedger()" style="padding: 8px; border: 1px solid var(--gray-300); border-radius: 4px;">
+                        <input type="month" id="ledger-month-from" value="${currentMonth}" onchange="filterClientLedger()" style="padding: 8px; border: 1px solid var(--gray-300); border-radius: 4px;">
                     </label>
                     <label style="display: flex; align-items: center; gap: 8px;">
                         To Month:
-                        <input type="month" id="ledger-month-to" onchange="filterClientLedger()" style="padding: 8px; border: 1px solid var(--gray-300); border-radius: 4px;">
+                        <input type="month" id="ledger-month-to" value="${currentMonth}" onchange="filterClientLedger()" style="padding: 8px; border: 1px solid var(--gray-300); border-radius: 4px;">
                     </label>
                     <button class="btn btn-sm btn-primary btn-export" onclick="exportLedgerPDF()" style="margin-left: auto;" title="Export PDF" aria-label="Export PDF">
                         <i class="fas fa-file-pdf"></i>
@@ -307,56 +309,18 @@ async function renderClientLedger(contentEl) {
             </div>
             <div class="card-body">
                 <div id="ledger-summary" style="display: grid; grid-template-columns: repeat(5, 1fr); gap: 12px; margin-bottom: 20px;"></div>
-
-                <div id="ledger-table"></div>
+                <div id="ledger-table" style="text-align: center; padding: 40px; color: var(--gray-500);">
+                    <i class="fas fa-spinner fa-spin" style="font-size: 24px; margin-bottom: 12px;"></i>
+                    <p>Loading ledger data...</p>
+                </div>
             </div>
         </div>
     `;
 
-    const currentMonth = new Date().toISOString().slice(0, 7);
-    const monthFromInput = document.getElementById('ledger-month-from');
-    const monthToInput = document.getElementById('ledger-month-to');
-    if (monthFromInput) {
-        monthFromInput.value = currentMonth;
-    }
-    if (monthToInput) {
-        monthToInput.value = currentMonth;
-    }
-
-    const storedClients = loadJSONFromStorage(STORAGE_KEYS.CLIENTS);
-    const storedInvoices = loadJSONFromStorage(STORAGE_KEYS.INVOICES);
-    const storedPayments = loadJSONFromStorage(STORAGE_KEYS.PAYMENTS);
-    window.ledgerState = {
-        clients: storedClients,
-        invoices: storedInvoices,
-        payments: storedPayments
-    };
-
-    populateLedgerClientOptions(storedClients, storedInvoices, storedPayments);
-    filterClientLedger();
-
-    const selectedClient = document.getElementById('ledger-client')?.value || '';
-    const selectedMonthFrom = monthFromInput?.value || '';
-    const selectedMonthTo = monthToInput?.value || '';
-
     const { clients, invoices, payments } = await fetchLedgerData();
-    window.ledgerState = {
-        clients,
-        invoices,
-        payments
-    };
+    window.ledgerState = { clients, invoices, payments };
 
     populateLedgerClientOptions(clients, invoices, payments);
-    const clientFilterEl = document.getElementById('ledger-client');
-    if (clientFilterEl) {
-        clientFilterEl.value = selectedClient;
-    }
-    if (monthFromInput) {
-        monthFromInput.value = selectedMonthFrom;
-    }
-    if (monthToInput) {
-        monthToInput.value = selectedMonthTo;
-    }
     filterClientLedger();
 }
 
@@ -395,10 +359,14 @@ async function renderVendorLedger(contentEl) {
     `;
 
     const currentMonth = new Date().toISOString().slice(0, 7);
-    const monthFromInput = document.getElementById('ledger-month-from');
-    const monthToInput = document.getElementById('ledger-month-to');
-    if (monthFromInput) monthFromInput.value = currentMonth;
-    if (monthToInput) monthToInput.value = currentMonth;
+    contentEl.querySelector('#vendor-ledger-table').innerHTML = `
+        <div style="text-align: center; padding: 40px; color: var(--gray-500);">
+            <i class="fas fa-spinner fa-spin" style="font-size: 24px; margin-bottom: 12px;"></i>
+            <p>Loading vendor ledger data...</p>
+        </div>`;
+
+    document.getElementById('ledger-month-from').value = currentMonth;
+    document.getElementById('ledger-month-to').value = currentMonth;
 
     await refreshVendorLedger(false);
 }
@@ -456,6 +424,12 @@ async function renderBankLedger(contentEl) {
     if (monthFromInput) monthFromInput.value = currentMonth;
     if (monthToInput) monthToInput.value = currentMonth;
 
+    document.getElementById('bank-ledger-table').innerHTML = `
+        <div style="text-align: center; padding: 40px; color: var(--gray-500);">
+            <i class="fas fa-spinner fa-spin" style="font-size: 24px; margin-bottom: 12px;"></i>
+            <p>Loading bank ledger data...</p>
+        </div>`;
+
     await refreshBankLedger(false);
 }
 
@@ -463,9 +437,9 @@ async function fetchLedgerData() {
     const timeout = (ms) => new Promise((_, reject) => setTimeout(() => reject(new Error('timeout')), ms));
 
     const [clientsResult, invoicesResult, paymentsResult] = await Promise.allSettled([
-        Promise.race([API.getClients({ limit: 500 }), timeout(2500)]),
-        Promise.race([API.getInvoices({ limit: 1000 }), timeout(2500)]),
-        Promise.race([API.getPayments({ limit: 1000 }), timeout(2500)])
+        Promise.race([API.getClients({ limit: 500 }), timeout(10000)]),
+        Promise.race([API.getInvoices({ limit: 1000 }), timeout(10000)]),
+        Promise.race([API.getPayments({ limit: 1000 }), timeout(10000)])
     ]);
 
     const apiClients = normalizeArrayResponse(clientsResult.status === 'fulfilled' ? clientsResult.value : [], 'clients');
