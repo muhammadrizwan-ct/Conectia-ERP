@@ -2992,10 +2992,10 @@ function generateProfessionalInvoiceHTML(invoice) {
                         <th width="5%" style="text-align: center;">#</th>
                         <th width="40%">Vehicle / Service Description</th>
                         ${invoice.invoiceType === 'category-details' ? '' : '<th width="10%" style="text-align: center;">Quantity</th>'}
-                        <th width="12%" style="text-align: right;">Unit Price</th>
-                        <th width="12%" style="text-align: right;">Subtotal</th>
-                        <th width="12%" style="text-align: right;">Sales Tax (19.5%)</th>
-                        <th width="12%" style="text-align: right;">Amount</th>
+                        <th width="12%" style="text-align: right;">Unit Price (PKR)</th>
+                        <th width="12%" style="text-align: right;">Subtotal (PKR)</th>
+                        <th width="12%" style="text-align: right;">Sales Tax 19.5% (PKR)</th>
+                        <th width="12%" style="text-align: right;">Amount (PKR)</th>
                     </tr>
                 </thead>
                 <tbody>
