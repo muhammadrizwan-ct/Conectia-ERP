@@ -406,7 +406,7 @@ async function renderVendorLedger(contentEl) {
 async function renderBankLedger(contentEl) {
     if (!contentEl) return;
 
-    const savedOpeningBalance = parseFloat(localStorage.getItem('bank_ledger_opening_balance') || '0') || 0;
+    const savedOpeningBalance = await loadBankOpeningBalance();
     const masterAccess = isMasterUser();
 
     contentEl.innerHTML = `
@@ -759,7 +759,27 @@ function getBankOpeningBalance() {
     return parseFloat(localStorage.getItem('bank_ledger_opening_balance') || '0') || 0;
 }
 
-function saveBankOpeningBalance() {
+async function loadBankOpeningBalance() {
+    try {
+        if (window.supabaseClient) {
+            const { data, error } = await window.supabaseClient
+                .from('app_settings')
+                .select('value')
+                .eq('key', 'bank_opening_balance')
+                .single();
+            if (!error && data) {
+                const val = parseFloat(data.value) || 0;
+                localStorage.setItem('bank_ledger_opening_balance', String(val));
+                return val;
+            }
+        }
+    } catch (e) {
+        console.warn('Could not fetch opening balance from Supabase, using cache:', e);
+    }
+    return getBankOpeningBalance();
+}
+
+async function saveBankOpeningBalance() {
     if (!isMasterUser()) {
         showNotification('Only the Master account can set the opening balance.', 'error');
         return;
@@ -767,6 +787,20 @@ function saveBankOpeningBalance() {
     const input = document.getElementById('bank-opening-balance');
     const value = Math.max(0, parseFloat(input?.value || '0') || 0);
     if (input) input.value = value;
+
+    // Persist to Supabase
+    if (window.supabaseClient) {
+        const { error } = await window.supabaseClient
+            .from('app_settings')
+            .upsert({ key: 'bank_opening_balance', value: String(value), updated_at: new Date().toISOString() }, { onConflict: 'key' });
+        if (error) {
+            console.error('Failed to save opening balance to Supabase:', error);
+            showNotification('Failed to save opening balance to server.', 'error');
+            return;
+        }
+    }
+
+    // Update local cache
     localStorage.setItem('bank_ledger_opening_balance', String(value));
     filterBankLedger();
     showNotification('Opening balance updated successfully', 'success');
