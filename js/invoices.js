@@ -2822,22 +2822,22 @@ function generateProfessionalInvoiceHTML(invoice) {
         /* BANK INFORMATION SECTION */
         .bank-info {
             margin-top: 4px;
-            padding: 12px;
+            padding: 8px 10px;
             background-color: white;
             border-radius: 0;
             border: 1px solid #000;
-            font-size: 13px;
-            line-height: 1.6;
+            font-size: 12px;
+            line-height: 1.5;
             display: grid;
             grid-template-columns: 1fr 1fr;
-            gap: 12px;
+            gap: 4px;
         }
         
         .bank-info-title {
             font-weight: 700;
-            margin-bottom: 8px;
+            margin-bottom: 4px;
             color: #1e40af;
-            font-size: 15px;
+            font-size: 13px;
             grid-column: 1 / -1;
         }
         
@@ -3032,25 +3032,24 @@ function generateProfessionalInvoiceHTML(invoice) {
                 </div>
             </div>
             
-            <!-- 1 inch footer space for company signature and letterhead -->
-            <div style="height: 1in; margin-top: 6px; padding-top: 8px;"></div>
+            <!-- footer space for company signature and letterhead -->
+            <div style="height: 0.5in; margin-top: 4px;"></div>
             
             <!-- BANK PAYMENT INFORMATION -->
             <div class="bank-info">
-                <div class="bank-info-title" style="font-size: 14px;">PAYMENT INFORMATION</div>
-                <div style="font-size: 13px; line-height: 1.8; margin-top: 8px;">
+                <div class="bank-info-title">PAYMENT INFORMATION</div>
+                <div style="font-size: 12px; line-height: 1.5;">
                     <div><strong>Account Title:</strong> Connectia Technologies Pvt Ltd</div>
                     <div><strong>Bank Name:</strong> Bank Islami Pakistan LTD</div>
                     <div><strong>Account Number:</strong> 0305415786690001</div>
                 </div>
-                <div style="font-size: 13px; line-height: 1.8; margin-top: 8px;">
+                <div style="font-size: 12px; line-height: 1.5;">
                     <div><strong>IBAN:</strong> PK11BKIP0305415786690001</div>
                     <div><strong>NTN:</strong> 9794829-3</div>
                     <div><strong>STRN:</strong> 3277876323252</div>
                 </div>
-                <div style="grid-column: 1 / -1; margin-top: 10px; font-size: 12px; color: #4b5563; border-top: 1px solid #dbeafe; padding-top: 12px;">
-                    <strong>Terms:</strong> Payment is due within ${CONFIG.PAYMENT_TERMS_DAYS} days of invoice date. 
-                    Please include invoice number with your payment.
+                <div style="grid-column: 1 / -1; margin-top: 4px; font-size: 11px; color: #4b5563; border-top: 1px solid #dbeafe; padding-top: 6px;">
+                    <strong>Terms:</strong> Payment is due within ${CONFIG.PAYMENT_TERMS_DAYS} days of invoice date. Please include invoice number with your payment.
                 </div>
             </div>
         </div>
