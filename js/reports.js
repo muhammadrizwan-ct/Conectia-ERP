@@ -382,12 +382,24 @@ async function renderClientMonthStatusReport() {
     const monthKeySet = new Set(months.map((m) => m.key));
     const selectedClient = filterEl?.value || '';
 
-    const filteredInvoices = enrichedInvoices.filter((inv) => {
-        const invClient = String(inv?.clientName || '').trim();
+    // invoicesForCells: filtered to last 12 months (drives coloured status cells)
+    const invoicesForCells = enrichedInvoices.filter((inv) => {
+        const invClient = String(inv?.clientName || '').trim().toLowerCase();
         if (!invClient) return false;
-        if (!selectedClient) return true;
-        return invClient === selectedClient;
-    }).filter((inv) => monthKeySet.has(getInvoiceMonthKey(inv)));
+        if (selectedClient && invClient !== selectedClient.toLowerCase()) return false;
+        return monthKeySet.has(getInvoiceMonthKeyRobust(inv, Array.from(monthKeySet)));
+    });
+
+    // allClientInvoices: all invoices regardless of month (drives Paid/Unpaid totals)
+    const allClientInvoices = enrichedInvoices.filter((inv) => {
+        const invClient = String(inv?.clientName || '').trim().toLowerCase();
+        if (!invClient) return false;
+        if (selectedClient && invClient !== selectedClient.toLowerCase()) return false;
+        return true;
+    });
+
+    // Keep filteredInvoices as alias for summary cards (12-month scope)
+    const filteredInvoices = invoicesForCells;
 
     console.log('[Reports 12M] paymentsByInvoice:', JSON.stringify(paymentsByInvoice));
     console.log('[Reports 12M] After enrichment + filter:', filteredInvoices.length, 'of', enrichedInvoices.length);
@@ -463,7 +475,13 @@ async function renderClientMonthStatusReport() {
         const rowStyle = isInactive
             ? 'height: 42px; opacity: 0.4; filter: grayscale(60%);'
             : 'height: 42px;';
-        const clientInvoices = filteredInvoices.filter((inv) => String(inv.clientName || '').trim() === clientName);
+        const clientInvoices = invoicesForCells.filter(
+            (inv) => String(inv.clientName || '').trim().toLowerCase() === clientName.toLowerCase()
+        );
+        // Use ALL invoices (any date) for paid/pending totals so nothing is missed
+        const clientAllInvoices = allClientInvoices.filter(
+            (inv) => String(inv.clientName || '').trim().toLowerCase() === clientName.toLowerCase()
+        );
         const byMonth = {};
 
         clientInvoices.forEach((inv) => {
@@ -473,8 +491,8 @@ async function renderClientMonthStatusReport() {
             byMonth[monthKey].push(inv);
         });
 
-        const clientPaidTotal = clientInvoices.reduce((sum, inv) => sum + normalizeReportMoney(inv.paidAmount), 0);
-        const clientPendingTotal = clientInvoices.reduce((sum, inv) => sum + normalizeReportMoney(inv.balance), 0);
+        const clientPaidTotal = clientAllInvoices.reduce((sum, inv) => sum + normalizeReportMoney(inv.paidAmount), 0);
+        const clientPendingTotal = clientAllInvoices.reduce((sum, inv) => sum + normalizeReportMoney(inv.balance), 0);
 
         html += `<tr style="${rowStyle}">`;
         html += `<td><strong>${clientName}</strong></td>`;
