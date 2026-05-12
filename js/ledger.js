@@ -434,30 +434,35 @@ async function renderBankLedger(contentEl) {
 }
 
 async function fetchLedgerData() {
-    const timeout = (ms) => new Promise((_, reject) => setTimeout(() => reject(new Error('timeout')), ms));
+    const selectWithRetry = window.executeSupabaseSelect || (async (queryFn) => queryFn());
 
     const [clientsResult, invoicesResult, paymentsResult] = await Promise.allSettled([
-        Promise.race([API.getClients({ limit: 500 }), timeout(10000)]),
-        Promise.race([API.getInvoices({ limit: 1000 }), timeout(10000)]),
-        Promise.race([API.getPayments({ limit: 1000 }), timeout(10000)])
+        selectWithRetry(() => supabase.from('clients').select('*')),
+        selectWithRetry(() => supabase.from('invoices').select('*')),
+        selectWithRetry(() => supabase.from('payments').select('*'))
     ]);
 
-    const apiClients = normalizeArrayResponse(clientsResult.status === 'fulfilled' ? clientsResult.value : [], 'clients');
-    const apiInvoices = normalizeArrayResponse(invoicesResult.status === 'fulfilled' ? invoicesResult.value : [], 'invoices').map(normalizeInvoiceForLedger);
-    const apiPayments = normalizeArrayResponse(paymentsResult.status === 'fulfilled' ? paymentsResult.value : [], 'payments')
-        .map(normalizeClientPaymentForLedger)
-        .filter(isClientPaymentForLedger);
+    const rawClients  = clientsResult.status  === 'fulfilled' && !clientsResult.value.error  ? (clientsResult.value.data  || []) : [];
+    const rawInvoices = invoicesResult.status === 'fulfilled' && !invoicesResult.value.error ? (invoicesResult.value.data || []) : [];
+    const rawPayments = paymentsResult.status === 'fulfilled' && !paymentsResult.value.error ? (paymentsResult.value.data || []) : [];
 
-    const storedClients = readStorageArray(STORAGE_KEYS.CLIENTS);
-    const storedInvoices = readStorageArray(STORAGE_KEYS.INVOICES).map(normalizeInvoiceForLedger);
-    const storedPayments = readStorageArray(STORAGE_KEYS.PAYMENTS)
-        .map(normalizeClientPaymentForLedger)
-        .filter(isClientPaymentForLedger);
+    const apiClients  = rawClients;
+    const apiInvoices = rawInvoices.map(normalizeInvoiceForLedger);
+    const apiPayments = rawPayments.map(normalizeClientPaymentForLedger).filter(isClientPaymentForLedger);
+
+    // Update localStorage cache so other modules stay in sync
+    if (rawClients.length)  localStorage.setItem(STORAGE_KEYS.CLIENTS,  JSON.stringify(rawClients));
+    if (rawInvoices.length) localStorage.setItem(STORAGE_KEYS.INVOICES, JSON.stringify(rawInvoices));
+    if (rawPayments.length) localStorage.setItem(STORAGE_KEYS.PAYMENTS, JSON.stringify(rawPayments));
+
+    const storedClients  = apiClients.length  ? [] : readStorageArray(STORAGE_KEYS.CLIENTS);
+    const storedInvoices = apiInvoices.length ? [] : readStorageArray(STORAGE_KEYS.INVOICES).map(normalizeInvoiceForLedger);
+    const storedPayments = apiPayments.length ? [] : readStorageArray(STORAGE_KEYS.PAYMENTS).map(normalizeClientPaymentForLedger).filter(isClientPaymentForLedger);
 
     return {
-        clients: dedupeByKey([...apiClients, ...storedClients], (c) => c.id || c.clientId || c.name),
+        clients:  dedupeByKey([...apiClients,  ...storedClients],  (c)   => c.id || c.clientId || c.name),
         invoices: dedupeByKey([...apiInvoices, ...storedInvoices], (inv) => inv.invoiceNo || inv.id || JSON.stringify(inv)),
-        payments: dedupeByKey([...apiPayments, ...storedPayments], (p) => p.reference || p.paymentReference || p.id || JSON.stringify(p))
+        payments: dedupeByKey([...apiPayments, ...storedPayments], (p)   => p.reference || p.paymentReference || p.id || JSON.stringify(p))
     };
 }
 
