@@ -406,11 +406,20 @@ async function renderVendorLedger(contentEl) {
 async function renderBankLedger(contentEl) {
     if (!contentEl) return;
 
+    const savedOpeningBalance = parseFloat(localStorage.getItem('bank_ledger_opening_balance') || '0') || 0;
+
     contentEl.innerHTML = `
         <div class="card">
             <div class="card-header">
                 <h3>Bank Ledger</h3>
                 <div style="display: flex; gap: 12px; flex-wrap: wrap; align-items: center;">
+                    <label style="display: flex; align-items: center; gap: 8px;">
+                        Opening Balance:
+                        <input type="number" id="bank-opening-balance" value="${savedOpeningBalance}" placeholder="0.00" min="0" step="0.01" style="padding: 8px; border: 1px solid var(--gray-300); border-radius: 4px; width: 130px;">
+                        <button class="btn btn-sm btn-secondary" onclick="saveBankOpeningBalance()" title="Set Opening Balance" style="white-space: nowrap;">
+                            <i class="fas fa-save"></i> Set
+                        </button>
+                    </label>
                     <label style="display: flex; align-items: center; gap: 8px;">
                         From Month:
                         <input type="month" id="ledger-month-from" onchange="filterBankLedger()" style="padding: 8px; border: 1px solid var(--gray-300); border-radius: 4px;">
@@ -428,7 +437,7 @@ async function renderBankLedger(contentEl) {
                 </div>
             </div>
             <div class="card-body">
-                <div id="bank-ledger-summary" style="display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; margin-bottom: 20px;"></div>
+                <div id="bank-ledger-summary" style="display: grid; grid-template-columns: repeat(5, 1fr); gap: 12px; margin-bottom: 20px;"></div>
                 <div id="bank-ledger-table"></div>
             </div>
         </div>
@@ -729,10 +738,24 @@ function buildBankLedgerRows() {
     return rows;
 }
 
+function getBankOpeningBalance() {
+    return parseFloat(localStorage.getItem('bank_ledger_opening_balance') || '0') || 0;
+}
+
+function saveBankOpeningBalance() {
+    const input = document.getElementById('bank-opening-balance');
+    const value = Math.max(0, parseFloat(input?.value || '0') || 0);
+    if (input) input.value = value;
+    localStorage.setItem('bank_ledger_opening_balance', String(value));
+    filterBankLedger();
+    showNotification('Opening balance updated successfully', 'success');
+}
+
 function filterBankLedger() {
     const rows = buildBankLedgerRows();
+    const openingBalance = getBankOpeningBalance();
 
-    if (rows.length === 0) {
+    if (rows.length === 0 && openingBalance === 0) {
         clearBankLedgerDisplay('No bank ledger entries found for selected filters.');
         return;
     }
@@ -744,9 +767,14 @@ function filterBankLedger() {
 function clearBankLedgerDisplay(message) {
     const summaryEl = document.getElementById('bank-ledger-summary');
     const tableEl = document.getElementById('bank-ledger-table');
+    const openingBalance = getBankOpeningBalance();
 
     if (summaryEl) {
         summaryEl.innerHTML = `
+            <div style="background: #f0fdf4; padding: 12px 10px; border-radius: 6px; border-left: 3px solid #16a34a;">
+                <small style="color: var(--gray-600); font-size: 11px;">Opening Balance</small>
+                <div style="font-size: 18px; font-weight: 700; color: #16a34a;">${formatPKR(openingBalance)}</div>
+            </div>
             <div style="background: #ecfdf5; padding: 12px 10px; border-radius: 6px; border-left: 3px solid #059669;">
                 <small style="color: var(--gray-600); font-size: 11px;">Total Credit</small>
                 <div style="font-size: 18px; font-weight: 700; color: #059669;">${formatPKR(0)}</div>
@@ -756,8 +784,8 @@ function clearBankLedgerDisplay(message) {
                 <div style="font-size: 18px; font-weight: 700; color: #dc2626;">${formatPKR(0)}</div>
             </div>
             <div style="background: #e3f2fd; padding: 12px 10px; border-radius: 6px; border-left: 3px solid #2563eb;">
-                <small style="color: var(--gray-600); font-size: 11px;">Net Balance</small>
-                <div style="font-size: 18px; font-weight: 700; color: #2563eb;">${formatPKR(0)}</div>
+                <small style="color: var(--gray-600); font-size: 11px;">Closing Balance</small>
+                <div style="font-size: 18px; font-weight: 700; color: #2563eb;">${formatPKR(openingBalance)}</div>
             </div>
             <div style="background: #f5f3ff; padding: 12px 10px; border-radius: 6px; border-left: 3px solid #7c3aed;">
                 <small style="color: var(--gray-600); font-size: 11px;">Entries</small>
@@ -775,11 +803,16 @@ function displayBankLedgerSummary(rows) {
     const summaryEl = document.getElementById('bank-ledger-summary');
     if (!summaryEl) return;
 
+    const openingBalance = getBankOpeningBalance();
     const totalCredit = rows.reduce((sum, row) => sum + (Number(row.credit) || 0), 0);
     const totalDebit = rows.reduce((sum, row) => sum + (Number(row.debit) || 0), 0);
-    const netBalance = totalCredit - totalDebit;
+    const closingBalance = openingBalance + totalCredit - totalDebit;
 
     summaryEl.innerHTML = `
+        <div style="background: #f0fdf4; padding: 12px 10px; border-radius: 6px; border-left: 3px solid #16a34a;">
+            <small style="color: var(--gray-600); font-size: 11px;">Opening Balance</small>
+            <div style="font-size: 18px; font-weight: 700; color: #16a34a;">${formatPKR(openingBalance)}</div>
+        </div>
         <div style="background: #ecfdf5; padding: 12px 10px; border-radius: 6px; border-left: 3px solid #059669;">
             <small style="color: var(--gray-600); font-size: 11px;">Total Credit</small>
             <div style="font-size: 18px; font-weight: 700; color: #059669;">${formatPKR(totalCredit)}</div>
@@ -789,8 +822,8 @@ function displayBankLedgerSummary(rows) {
             <div style="font-size: 18px; font-weight: 700; color: #dc2626;">${formatPKR(totalDebit)}</div>
         </div>
         <div style="background: #e3f2fd; padding: 12px 10px; border-radius: 6px; border-left: 3px solid #2563eb;">
-            <small style="color: var(--gray-600); font-size: 11px;">Net Balance</small>
-            <div style="font-size: 18px; font-weight: 700; color: ${netBalance >= 0 ? '#2563eb' : '#dc2626'};">${formatPKR(netBalance)}</div>
+            <small style="color: var(--gray-600); font-size: 11px;">Closing Balance</small>
+            <div style="font-size: 18px; font-weight: 700; color: ${closingBalance >= 0 ? '#2563eb' : '#dc2626'};">${formatPKR(closingBalance)}</div>
         </div>
         <div style="background: #f5f3ff; padding: 12px 10px; border-radius: 6px; border-left: 3px solid #7c3aed;">
             <small style="color: var(--gray-600); font-size: 11px;">Entries</small>
@@ -803,7 +836,9 @@ function displayBankLedgerTable(rows) {
     const container = document.getElementById('bank-ledger-table');
     if (!container) return;
 
-    if (!rows || rows.length === 0) {
+    const openingBalance = getBankOpeningBalance();
+
+    if ((!rows || rows.length === 0) && openingBalance === 0) {
         container.innerHTML = '<p style="text-align: center; color: var(--gray-500);">No bank ledger entries found for selected filters</p>';
         return;
     }
@@ -826,7 +861,20 @@ function displayBankLedgerTable(rows) {
     html += '<div style="height: 440px; overflow-y: auto; border-top: 1px solid var(--gray-200); border-bottom: 1px solid var(--gray-200);">';
     html += '<table class="data-table" style="margin-bottom: 0; table-layout: fixed; width: 100%;"><tbody>';
 
-    rows.forEach((row) => {
+    // Opening balance row — always first
+    if (openingBalance > 0) {
+        runningBalance = openingBalance;
+        html += '<tr style="background: #f0fdf4; font-style: italic;">';
+        html += '<td style="width: 12%;">-</td>';
+        html += '<td style="width: 18%;"><strong>OPEN-BAL</strong></td>';
+        html += '<td style="width: 30%; color: #16a34a; font-weight: 600;">Opening Bank Balance</td>';
+        html += '<td style="width: 13%; color: var(--gray-500);">-</td>';
+        html += `<td style="width: 13%; color: #16a34a; font-weight: 700;">${formatPKR(openingBalance)}</td>`;
+        html += `<td style="width: 14%; color: var(--gray-800); font-weight: 700;">${formatPKR(runningBalance)}</td>`;
+        html += '</tr>';
+    }
+
+    (rows || []).forEach((row) => {
         runningBalance += (row.credit || 0) - (row.debit || 0);
         totalDebit += row.debit || 0;
         totalCredit += row.credit || 0;
