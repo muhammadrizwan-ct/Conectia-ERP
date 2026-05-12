@@ -3032,8 +3032,8 @@ function generateProfessionalInvoiceHTML(invoice) {
                 </div>
             </div>
             
-            <!-- footer space for company signature and letterhead -->
-            <div style="height: 0.5in; margin-top: 4px;"></div>
+            <!-- 1 inch footer space for company signature and letterhead -->
+            <div style="height: 1in; margin-top: 6px; padding-top: 8px;"></div>
             
             <!-- BANK PAYMENT INFORMATION -->
             <div class="bank-info">
