@@ -407,19 +407,21 @@ async function renderBankLedger(contentEl) {
     if (!contentEl) return;
 
     const savedOpeningBalance = parseFloat(localStorage.getItem('bank_ledger_opening_balance') || '0') || 0;
+    const masterAccess = isMasterUser();
 
     contentEl.innerHTML = `
         <div class="card">
             <div class="card-header">
                 <h3>Bank Ledger</h3>
                 <div style="display: flex; gap: 12px; flex-wrap: wrap; align-items: center;">
+                    ${masterAccess ? `
                     <label style="display: flex; align-items: center; gap: 8px;">
                         Opening Balance:
                         <input type="number" id="bank-opening-balance" value="${savedOpeningBalance}" placeholder="0.00" min="0" step="0.01" style="padding: 8px; border: 1px solid var(--gray-300); border-radius: 4px; width: 130px;">
                         <button class="btn btn-sm btn-secondary" onclick="saveBankOpeningBalance()" title="Set Opening Balance" style="white-space: nowrap;">
                             <i class="fas fa-save"></i> Set
                         </button>
-                    </label>
+                    </label>` : ''}
                     <label style="display: flex; align-items: center; gap: 8px;">
                         From Month:
                         <input type="month" id="ledger-month-from" onchange="filterBankLedger()" style="padding: 8px; border: 1px solid var(--gray-300); border-radius: 4px;">
@@ -738,11 +740,25 @@ function buildBankLedgerRows() {
     return rows;
 }
 
+function isMasterUser() {
+    const user = Auth?.getCurrentUser?.();
+    if (!user) return false;
+    const alias = String(CONFIG?.MASTER_LOGIN_ALIAS || 'master').trim().toLowerCase();
+    const masterEmail = String(CONFIG?.MASTER_LOGIN_EMAIL || '').trim().toLowerCase();
+    const usernameMatch = String(user.username || '').trim().toLowerCase() === alias;
+    const emailMatch = masterEmail && String(user.email || '').trim().toLowerCase() === masterEmail;
+    return usernameMatch || emailMatch;
+}
+
 function getBankOpeningBalance() {
     return parseFloat(localStorage.getItem('bank_ledger_opening_balance') || '0') || 0;
 }
 
 function saveBankOpeningBalance() {
+    if (!isMasterUser()) {
+        showNotification('Only the Master account can set the opening balance.', 'error');
+        return;
+    }
     const input = document.getElementById('bank-opening-balance');
     const value = Math.max(0, parseFloat(input?.value || '0') || 0);
     if (input) input.value = value;
