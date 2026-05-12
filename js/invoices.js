@@ -1513,9 +1513,9 @@ function displayInvoices(invoices) {
     html += '<th>Client</th>';
     html += '<th>Month</th>';
     html += '<th>Vehicles</th>';
-    html += '<th>Amount</th>';
-    html += '<th>Paid</th>';
-    html += '<th>Balance</th>';
+    html += '<th>Amount (PKR)</th>';
+    html += '<th>Paid (PKR)</th>';
+    html += '<th>Balance (PKR)</th>';
     html += '<th>Due Date</th>';
     html += '<th>Status</th>';
     
@@ -1537,9 +1537,9 @@ function displayInvoices(invoices) {
         html += `<td>${inv.clientName || 'Unknown'}</td>`;
         html += `<td>${getInvoiceMonthLabel(inv)}</td>`;
         html += `<td style="text-align: center;">${inv.vehicleCount || 0}</td>`;
-        html += `<td style="font-weight: 600;">${formatPKR(inv.totalAmount)}</td>`;
-        html += `<td style="color: var(--success);">${formatPKR(inv.paidAmount || 0)}</td>`;
-        html += `<td style="color: ${inv.balance > 0 ? 'var(--danger)' : 'var(--success)'}; font-weight: 600;">${formatPKR(inv.balance)}</td>`;
+        html += `<td style="font-weight: 600;">${parseFloat(inv.totalAmount || 0).toLocaleString('en-PK', {minimumFractionDigits: 2, maximumFractionDigits: 2})}</td>`;
+        html += `<td style="color: var(--success);">${parseFloat(inv.paidAmount || 0).toLocaleString('en-PK', {minimumFractionDigits: 2, maximumFractionDigits: 2})}</td>`;
+        html += `<td style="color: ${inv.balance > 0 ? 'var(--danger)' : 'var(--success)'}; font-weight: 600;">${parseFloat(inv.balance || 0).toLocaleString('en-PK', {minimumFractionDigits: 2, maximumFractionDigits: 2})}</td>`;
         html += `<td style="${isOverdue ? 'color: var(--danger); font-weight: 600;' : ''}">${formatDate(inv.dueDate)}</td>`;
         html += `<td><span class="status-badge ${statusClass}">${inv.status || 'Pending'}</span></td>`;
         
@@ -1741,7 +1741,7 @@ function displayVendorInvoicesTable(invoices) {
     html += '<th>Date</th>';
     html += '<th>Vendor</th>';
     html += '<th>Month</th>';
-    html += '<th>Amount</th>';
+    html += '<th>Amount (PKR)</th>';
     html += '<th>Status</th>';
 
     if (permissions.canManageInvoices && canDeleteInvoices) {
@@ -1759,7 +1759,7 @@ function displayVendorInvoicesTable(invoices) {
         html += `<td>${formatDate(inv.invoiceDate)}</td>`;
         html += `<td>${inv.vendorName || '-'}</td>`;
         html += `<td>${inv.invoiceMonth || '-'}</td>`;
-        html += `<td style="font-weight: 600;">${formatPKR(inv.amount || 0)}</td>`;
+        html += `<td style="font-weight: 600;">${parseFloat(inv.amount || 0).toLocaleString('en-PK', {minimumFractionDigits: 2, maximumFractionDigits: 2})}</td>`;
         html += `<td><span class="status-badge ${statusClass}">${inv.status || 'Pending'}</span></td>`;
 
         if (permissions.canManageInvoices && (canGenerateInvoices || canDeleteInvoices)) {
@@ -2766,6 +2766,8 @@ function generateProfessionalInvoiceHTML(invoice) {
             font-weight: 700;
             font-size: 12px;
             text-transform: uppercase;
+            -webkit-print-color-adjust: exact;
+            print-color-adjust: exact;
         }
         
         .items-table td {
