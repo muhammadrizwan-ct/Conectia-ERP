@@ -693,7 +693,7 @@ function setActiveInvoiceTab(tab) {
     (async () => {
         if (tab === 'client' || tab === undefined) {
             const today = new Date();
-            if (today.getDate() < 28) return;
+            if (today.getDate() < 25) return;
             let clients = [];
             if (window.fetchClientsFromSupabase) {
                 clients = await window.fetchClientsFromSupabase();
@@ -718,6 +718,13 @@ function setActiveInvoiceTab(tab) {
                     return invClientId == clientId && invMonth.includes(currentMonth.toLowerCase()) && invYear;
                 });
             });
+            const missingClientNames = missingClients
+                .map(c => c.name || c.clientName || c.id || c.client_id || c.clientId)
+                .filter(Boolean);
+            const displayedNames = missingClientNames.slice(0, 5);
+            const missingTitle = missingClientNames.length > 0
+                ? `Missing invoices for: ${displayedNames.join(', ')}${missingClientNames.length > 5 ? ` and ${missingClientNames.length - 5} more` : ''}`
+                : 'Some active clients are missing invoices for this month!';
             // Add flashing red icon to Invoices tab if missing
             const styleId = 'flashing-invoice-alert-style-toolbar';
             if (!document.getElementById(styleId)) {
@@ -742,11 +749,11 @@ function setActiveInvoiceTab(tab) {
                     if (!alertIcon) {
                         alertIcon = document.createElement('span');
                         alertIcon.className = 'toolbar-alert-flash-red';
-                        alertIcon.title = 'Some active clients are missing invoices for this month!';
                         alertIcon.style.marginLeft = '8px';
                         alertIcon.innerHTML = '&#9888;'; // Unicode warning sign
                         tabBtn.appendChild(alertIcon);
                     }
+                    alertIcon.title = missingTitle;
                 } else {
                     if (alertIcon) alertIcon.remove();
                 }
@@ -775,7 +782,7 @@ function renderClientInvoicesTab(contentEl) {
 
     async function checkAndShowMissingInvoiceAlert() {
         const today = new Date();
-        if (today.getDate() < 28) return; // Only show alert on or after 28th
+        if (today.getDate() < 25) return; // Only show alert on or after 25th
 
         // Fetch all active clients
         let clients = [];

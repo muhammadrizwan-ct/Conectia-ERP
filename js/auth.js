@@ -942,7 +942,7 @@ function renderSidebar() {
     // After rendering, check for missing invoices and show alert if needed
     setTimeout(async () => {
         const today = new Date();
-        if (today.getDate() < 28) return;
+        if (today.getDate() < 25) return;
         let clients = [];
         if (window.fetchClientsFromSupabase) {
             clients = await window.fetchClientsFromSupabase();
@@ -989,11 +989,19 @@ function renderSidebar() {
             `;
             document.head.appendChild(style);
         }
+        const missingClientNames = missingClients
+            .map(c => c.name || c.clientName || c.id || c.client_id || c.clientId)
+            .filter(Boolean);
+        const displayedNames = missingClientNames.slice(0, 5);
+        const sidebarTitle = missingClientNames.length > 0
+            ? `Missing invoices for: ${displayedNames.join(', ')}${missingClientNames.length > 5 ? ` and ${missingClientNames.length - 5} more` : ''}`
+            : 'Some active clients are missing invoices for this month!';
+
         const alertSpan = document.getElementById('sidebar-invoice-alert');
         if (alertSpan) {
             if (missingClients.length > 0) {
                 alertSpan.className = 'sidebar-alert-flash-red';
-                alertSpan.title = 'Some active clients are missing invoices for this month!';
+                alertSpan.title = sidebarTitle;
                 alertSpan.innerHTML = '&#9888;'; // Unicode warning sign
             } else {
                 alertSpan.className = '';
