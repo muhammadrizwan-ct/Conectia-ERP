@@ -595,6 +595,14 @@ async function saveInvoiceToSupabase(invoice) {
                         details: { invoice: data }
                     });
                 }
+                // Refresh alerts so UI updates immediately when invoices are created
+                try {
+                    if (typeof window.updateInvoiceMissingAlerts === 'function') {
+                        window.updateInvoiceMissingAlerts();
+                    }
+                } catch (e) {
+                    console.error('Failed to refresh invoice alerts after save:', e);
+                }
                 return data ? normalizeInvoiceRecord(data) : null;
             }
 
@@ -776,6 +784,89 @@ function setActiveInvoiceTab(tab) {
         renderClientInvoicesTab(contentEl);
     }
 }
+
+// Refresh invoice-missing alerts in toolbar and sidebar. Keeps alerts
+// accurate until all invoices are generated. Exposed on `window` so
+// other modules (like save handlers) can trigger a refresh.
+window.updateInvoiceMissingAlerts = async function updateInvoiceMissingAlerts() {
+    try {
+        const today = new Date();
+        if (today.getDate() < 25) return;
+
+        let clients = [];
+        if (window.fetchClientsFromSupabase) {
+            clients = await window.fetchClientsFromSupabase();
+        } else if (typeof fetchClientsFromSupabase === 'function') {
+            clients = await fetchClientsFromSupabase();
+        }
+        const activeClients = (clients || []).filter(c => (c.status || '').toLowerCase() === 'active');
+
+        let invoices = [];
+        if (window.fetchInvoicesFromSupabase) {
+            invoices = await window.fetchInvoicesFromSupabase();
+        } else if (typeof fetchInvoicesFromSupabase === 'function') {
+            invoices = await fetchInvoicesFromSupabase();
+        }
+
+        const currentMonth = today.toLocaleString('en-US', { month: 'long' });
+        const currentYear = today.getFullYear();
+
+        const missingClients = activeClients.filter(client => {
+            const normalizeId = id => (id === undefined || id === null) ? '' : String(id).trim();
+            const normalizeMonth = m => (m || '').toLowerCase().replace(/\./g, '').trim();
+            const clientId = normalizeId(client.clientId || client.id || client.client_id);
+            return !invoices.some(inv => {
+                const invClientId = normalizeId(inv.clientId || inv.client_id || inv.id);
+                const invMonth = normalizeMonth(inv.month || inv.invoiceMonth || inv.invoice_month || '');
+                const invYear = (inv.invoiceDate || inv.createdDate || inv.created_at || '').toString().includes(currentYear);
+                const monthMatch = invMonth === currentMonth.toLowerCase() || invMonth.startsWith(currentMonth.toLowerCase().slice(0, 3));
+                return invClientId && clientId && invClientId === clientId && monthMatch && invYear;
+            });
+        });
+
+        const missingClientNames = missingClients
+            .map(c => c.name || c.clientName || c.id || c.client_id || c.clientId)
+            .filter(Boolean);
+        const displayedNames = missingClientNames.slice(0, 5);
+        const missingTitle = missingClientNames.length > 0
+            ? `Missing invoices for: ${displayedNames.join(', ')}${missingClientNames.length > 5 ? ` and ${missingClientNames.length - 5} more` : ''}`
+            : 'Some active clients are missing invoices for this month!';
+
+        // Update toolbar tab alert
+        const tabBtn = document.querySelector('.ledger-tabs .ledger-tab[data-invoice-tab="client"]');
+        if (tabBtn) {
+            let alertIcon = tabBtn.querySelector('.toolbar-alert-flash-red');
+            if (missingClients.length > 0) {
+                if (!alertIcon) {
+                    alertIcon = document.createElement('span');
+                    alertIcon.className = 'toolbar-alert-flash-red';
+                    alertIcon.style.marginLeft = '8px';
+                    alertIcon.innerHTML = '&#9888;';
+                    tabBtn.appendChild(alertIcon);
+                }
+                alertIcon.title = missingTitle;
+            } else {
+                if (alertIcon) alertIcon.remove();
+            }
+        }
+
+        // Update sidebar alert if present
+        const alertSpan = document.getElementById('sidebar-invoice-alert');
+        if (alertSpan) {
+            if (missingClients.length > 0) {
+                alertSpan.className = 'sidebar-alert-flash-red';
+                alertSpan.title = missingTitle;
+                alertSpan.innerHTML = '&#9888;';
+            } else {
+                alertSpan.className = '';
+                alertSpan.innerHTML = '';
+                alertSpan.title = '';
+            }
+        }
+    } catch (err) {
+        console.error('updateInvoiceMissingAlerts error:', err);
+    }
+};
 
 function renderClientInvoicesTab(contentEl) {
     window.lastClientInvoiceSearchTerm = '';
