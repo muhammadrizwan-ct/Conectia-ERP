@@ -664,6 +664,11 @@ async function loadInvoices(initialTab = 'client') {
 
     window.invoiceActiveTab = initialTab;
     setActiveInvoiceTab(initialTab);
+    // Ensure alerts are refreshed immediately and start hourly polling
+    setTimeout(() => {
+        if (typeof window.updateInvoiceMissingAlerts === 'function') window.updateInvoiceMissingAlerts();
+        if (typeof window.startInvoiceAlertPolling === 'function') window.startInvoiceAlertPolling();
+    }, 0);
 }
 
 function updateInvoiceHeaderActions(tab, permissions = Auth.permissions) {
@@ -865,6 +870,34 @@ window.updateInvoiceMissingAlerts = async function updateInvoiceMissingAlerts() 
         }
     } catch (err) {
         console.error('updateInvoiceMissingAlerts error:', err);
+    }
+};
+
+// Start/stop polling for invoice-missing alerts. Poll interval is 1 hour.
+window.startInvoiceAlertPolling = function startInvoiceAlertPolling(intervalMs = 1000 * 60 * 60) {
+    try {
+        if (window.invoiceAlertPollId) return; // already polling
+        // Run once immediately
+        if (typeof window.updateInvoiceMissingAlerts === 'function') {
+            window.updateInvoiceMissingAlerts();
+        }
+        window.invoiceAlertPollId = setInterval(() => {
+            if (typeof window.updateInvoiceMissingAlerts === 'function') {
+                window.updateInvoiceMissingAlerts();
+            }
+        }, intervalMs);
+    } catch (err) {
+        console.error('startInvoiceAlertPolling failed:', err);
+    }
+};
+
+window.stopInvoiceAlertPolling = function stopInvoiceAlertPolling() {
+    try {
+        if (!window.invoiceAlertPollId) return;
+        clearInterval(window.invoiceAlertPollId);
+        window.invoiceAlertPollId = null;
+    } catch (err) {
+        console.error('stopInvoiceAlertPolling failed:', err);
     }
 };
 
