@@ -1127,7 +1127,23 @@ function matchesMonthRangeFilter(dateValue, monthName, monthFrom, monthTo) {
 
 function extractPaymentClient(payment) {
     if (!payment?.lineItems || payment.lineItems.length === 0) return '';
-    return payment.lineItems[0]?.clientName || '';
+    return payment.lineItems[0]?.clientName || payment.lineItems[0]?.client_name || '';
+}
+
+function getInvoiceNoFromLineItem(item) {
+    return String(item?.invoiceNo || item?.invoice_no || '').trim();
+}
+
+function getPaymentInvoiceText(payment) {
+    if (Array.isArray(payment.lineItems) && payment.lineItems.length > 0) {
+        const invoiceNos = payment.lineItems
+            .map(getInvoiceNoFromLineItem)
+            .filter((invoiceNo) => invoiceNo);
+        if (invoiceNos.length > 0) {
+            return invoiceNos.join(', ');
+        }
+    }
+    return String(payment.invoiceNo || payment.invoice_no || '').trim() || '-';
 }
 
 function recordMatchesMonth(dateValue, monthName, targetMonth) {
@@ -1331,13 +1347,6 @@ function displayLedgerTable(invoices, payments) {
     
     html += '</div>';
     container.innerHTML = html;
-}
-
-function getPaymentInvoiceText(payment) {
-    if (Array.isArray(payment.lineItems) && payment.lineItems.length > 0) {
-        return payment.lineItems.map((item) => item.invoiceNo).join(', ');
-    }
-    return payment.invoiceNo || '-';
 }
 
 function resetLedgerFilters() {
