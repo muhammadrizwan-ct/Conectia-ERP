@@ -1313,19 +1313,38 @@ function displayLedgerTable(invoices, payments) {
     // Header table (fixed)
     let html = '<div style="border: 1px solid var(--gray-200); border-radius: 4px; overflow: hidden;">';
     html += '<div class="table-responsive"><table class="data-table" style="margin-bottom: 0; border-bottom: none; table-layout: fixed; width: 100%;">';
+    html += '<colgroup>';
+    html += '<col style="width: 10%;">';
+    html += '<col style="width: 15%;">';
+    html += '<col style="width: 25%;">';
+    html += '<col style="width: 12%;">';
+    html += '<col style="width: 12%;">';
+    html += '<col style="width: 13%;">';
+    html += '<col style="width: 13%;">';
+    html += '</colgroup>';
     html += '<thead style="background: var(--gray-50);"><tr>';
-    html += '<th style="width: 10%;">Date</th>';
-    html += '<th style="width: 15%;">Invoice No</th>';
-    html += '<th style="width: 25%;">Details</th>';
-    html += '<th style="width: 12%;">Debit</th>';
-    html += '<th style="width: 12%;">Credit</th>';
-    html += '<th style="width: 13%;">Tax Deduction</th>';
-    html += '<th style="width: 13%;">Balance</th>';
+    html += '<th>Date</th>';
+    html += '<th>Invoice No</th>';
+    html += '<th>Details</th>';
+    html += '<th>Debit</th>';
+    html += '<th>Credit</th>';
+    html += '<th>Tax Deduction</th>';
+    html += '<th>Balance</th>';
     html += '</tr></thead></table></div>';
 
     // Scrollable body
     html += '<div style="height: 440px; overflow-y: auto; border-top: 1px solid var(--gray-200); border-bottom: 1px solid var(--gray-200);">';
-    html += '<table class="data-table" style="margin-bottom: 0; table-layout: fixed; width: 100%;"><tbody>';
+    html += '<table class="data-table" style="margin-bottom: 0; table-layout: fixed; width: 100%;">';
+    html += '<colgroup>';
+    html += '<col style="width: 10%;">';
+    html += '<col style="width: 15%;">';
+    html += '<col style="width: 25%;">';
+    html += '<col style="width: 12%;">';
+    html += '<col style="width: 12%;">';
+    html += '<col style="width: 13%;">';
+    html += '<col style="width: 13%;">';
+    html += '</colgroup>';
+    html += '<tbody>';
     
     rows.forEach((row) => {
         const taxDeduction = row.taxDeduction || 0;
