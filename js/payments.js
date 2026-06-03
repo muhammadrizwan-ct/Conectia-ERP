@@ -515,6 +515,7 @@ async function savePaymentToSupabase(payment) {
             payment_scope: 'client',
             invoice_id: paymentContext.invoiceDbId,
             client_id: paymentContext.clientDbId,
+            invoice_no: paymentContext.invoiceNo || safePayment.invoiceNo || firstLineItem?.invoiceNo || '',
             amount: safePayment.totalAmount,
             paid_amount: safePayment.paidAmount ?? safePayment.netAmount ?? safePayment.totalAmount,
             tax_deduction_percentage: safePayment.taxRate,
