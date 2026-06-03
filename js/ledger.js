@@ -663,7 +663,7 @@ function buildBankLedgerRows() {
         if (!matchesMonthRangeFilter(payment.paymentDate, payment.month, monthFrom, monthTo)) return;
 
         const amount = getClientPaymentNetAmount(payment);
-        const clientName = payment.clientName || extractPaymentClient(payment) || 'Client';
+        const clientName = getPaymentClientName(payment);
         const paymentType = payment.method || 'N/A';
         const reference = payment.reference || payment.paymentReference || '-';
 
@@ -1156,6 +1156,38 @@ function getPaymentInvoiceText(payment) {
         }
     }
     return String(payment.invoiceNo || payment.invoice_no || '').trim() || '-';
+}
+
+function getPaymentClientName(payment) {
+    if (!payment || typeof payment !== 'object') return 'Client';
+    // check common fields
+    const name = String(
+        payment.clientName ||
+        payment.client_name ||
+        payment.client ||
+        payment.customerName ||
+        payment.customer_name ||
+        ''
+    ).trim();
+    if (name) return name;
+
+    // try first line item
+    if (Array.isArray(payment.lineItems) && payment.lineItems.length > 0) {
+        const fi = payment.lineItems[0];
+        const ln = String(fi?.clientName || fi?.client_name || '').trim();
+        if (ln) return ln;
+    }
+
+    // try to lookup by client id from ledger state
+    const clientId = String(payment.clientId || payment.client_id || payment.clientDbId || '').trim();
+    if (clientId && window.ledgerState && Array.isArray(window.ledgerState.clients)) {
+        const found = window.ledgerState.clients.find(c => String(c.id || c.clientId || c.clientid || '') === clientId || String(c.id || '') === clientId);
+        if (found && (found.name || found.clientName || found.client_name)) {
+            return String(found.name || found.clientName || found.client_name).trim();
+        }
+    }
+
+    return 'Client';
 }
 
 function recordMatchesMonth(dateValue, monthName, targetMonth) {
