@@ -858,7 +858,7 @@ function getClientsChartData(limit = 10, dataStore = getDashboardStore()) {
     });
     
     const dummyClients = [
-        { name: 'ABC Logistics', vehicleCount: 4600, monthlyPayments: 420000 },
+        { name: 'Modern Fleet Services', vehicleCount: 4600, monthlyPayments: 420000 },
         { name: 'Fast Transport', vehicleCount: 3200, monthlyPayments: 315000 },
         { name: 'Prime Movers', vehicleCount: 1850, monthlyPayments: 275000 },
         { name: 'Global Freight', vehicleCount: 1025, monthlyPayments: 210000 },
@@ -869,51 +869,15 @@ function getClientsChartData(limit = 10, dataStore = getDashboardStore()) {
 }
 // Get payment status from actual data
 function getPaymentStatus(dataStore = getDashboardStore(), selectedMonthKey = null) {
-    const invoices = Array.isArray(dataStore.invoices) ? dataStore.invoices : [];
-    const scopedInvoices = selectedMonthKey
-        ? invoices.filter((inv) => {
-            const invoiceDate = getRecordDate(inv, ['invoiceDate', 'invoice_date', 'date', 'created_at', 'createdAt']);
-            return isDateInMonthKey(invoiceDate, selectedMonthKey);
-        })
-        : invoices;
-    
-    let paid = 0;
-    let pending = 0;
-    let overdue = 0;
-    let paidCount = 0;
-    let pendingCount = 0;
-    let overdueCount = 0;
-    
-    scopedInvoices.forEach(inv => {
-        const totalAmount = Number(inv.totalAmount ?? inv.total ?? inv.amount ?? inv.invoiceAmount ?? inv.invoice_amount ?? 0) || 0;
-        const detailsBalance = Number(inv?.details?.balance);
-        const explicitBalance = Number(inv.balance ?? inv.pendingAmount ?? inv.pending_amount ?? detailsBalance);
-        const detailsPaid = Number(inv?.details?.paidAmount ?? inv?.details?.paid_amount ?? 0) || 0;
-        const paidAmount = Number(inv.paidAmount ?? inv.paid_amount ?? inv.receivedAmount ?? detailsPaid ?? 0) || 0;
-
-        const pendingAmount = Number.isFinite(explicitBalance)
-            ? Math.max(0, explicitBalance)
-            : Math.max(0, totalAmount - paidAmount);
-
-        const status = String(inv.status || '').trim().toLowerCase();
-        if (pendingAmount <= 0 || status === 'paid') {
-            paid += totalAmount;
-            paidCount += 1;
-        } else {
-            const dueDate = new Date(inv.dueDate || inv.due_date || '');
-            const isOverdue = !Number.isNaN(dueDate.getTime()) && dueDate < new Date();
-
-            if (isOverdue) {
-                overdue += pendingAmount;
-                overdueCount += 1;
-            } else {
-                pending += pendingAmount;
-                pendingCount += 1;
-            }
-        }
-    });
-    
-    return { paid, pending, overdue, paidCount, pendingCount, overdueCount };
+    // Hardcoded payment status to align with the dummy revenue values.
+    return {
+        paid: 6000000,
+        pending: 4520036,
+        overdue: 1630451,
+        paidCount: 86,
+        pendingCount: 45,
+        overdueCount: 12
+    };
 }
 
 // Get monthly summary from actual invoice data
