@@ -1984,10 +1984,15 @@ function handleVehicleImportFile(event) {
             });
 
             if (newVehicles.length === 0) {
-                showNotification('No vehicles were imported. Please verify your sheet columns and values.', 'error');
+                const errorSummary = skippedRows.length > 0
+                    ? `No vehicles were imported. ${skippedRows.length} row(s) failed to import.`
+                    : 'No vehicles were imported. Please verify your sheet columns and values.';
+
+                showNotification(errorSummary, 'error');
+
                 if (skippedRows.length > 0) {
                     console.warn('Vehicle import skipped rows:', skippedRows);
-                    alert(skippedRows.slice(0, 12).join('\n'));
+                    alert([errorSummary, '', ...skippedRows.slice(0, 12)].join('\n'));
                 }
                 return;
             }
@@ -2020,9 +2025,10 @@ function handleVehicleImportFile(event) {
             });
 
             if (skippedRows.length > 0) {
-                showNotification(`Saved ${savedVehicles.length} vehicles. Skipped ${skippedRows.length} rows.`, savedVehicles.length > 0 ? 'success' : 'error');
+                const summary = `Saved ${savedVehicles.length} vehicles. Skipped ${skippedRows.length} rows.`;
+                showNotification(summary, savedVehicles.length > 0 ? 'success' : 'error');
                 console.warn('Vehicle import skipped rows:', skippedRows);
-                alert(skippedRows.slice(0, 12).join('\n'));
+                alert([summary, '', ...skippedRows.slice(0, 12)].join('\n'));
             } else {
                 showNotification(`Saved ${savedVehicles.length} vehicles successfully!`, 'success');
             }

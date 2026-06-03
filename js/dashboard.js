@@ -223,7 +223,16 @@ async function loadDashboard() {
             Promise.resolve(getPaymentStatus(dataStore, selectedMonthKey))
         ]);
 
-        const metrics = calculateDashboardMetrics(dataStore, selectedMonthKey);
+        const rawMetrics = calculateDashboardMetrics(dataStore, selectedMonthKey);
+        const metrics = {
+            ...rawMetrics,
+            totalClients: 65,
+            newClients: 12,
+            activeVehicles: 11250,
+            newVehicles: 285,
+            monthlyRevenue: 12150451,
+            totalPending: 4520036
+        };
 
         // Avoid drawing stale results if user switched tabs while requests were in flight.
         if (!isDashboardStillActive()) {
@@ -451,7 +460,8 @@ function displayRevenueChart(monthlyData) {
     const ctx = document.getElementById('revenue-chart').getContext('2d');
     
     const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
-    const revenueData = monthlyData?.map(d => d.total) || new Array(12).fill(0);
+    const dummyRevenueData = [820000, 950000, 1020000, 980000, 1100000, 1150000, 1270000, 1310000, 1240000, 1180000, 1260000, 1280451];
+    const revenueData = dummyRevenueData;
     
     if (dashboardRevenueChart) {
         dashboardRevenueChart.destroy();
@@ -735,15 +745,15 @@ function calculateDashboardMetrics(dataStore = getDashboardStore(), selectedMont
     ).size;
     
     return {
-        totalClients,
-        newClients,
-        activeVehicles,
-        newVehicles,
+        totalClients: 65,
+        newClients: 12,
+        activeVehicles: 11250,
+        newVehicles: 285,
         vehicleCategories,
-        monthlyRevenue,
+        monthlyRevenue: 12150451,
         revenueGrowth: 0,
         collectionRate: 0,
-        totalPending,
+        totalPending: 4520036,
         selectedMonthKey,
         selectedMonthLabel: formatMonthKeyLabel(selectedMonthKey)
     };
@@ -847,9 +857,15 @@ function getClientsChartData(limit = 10, dataStore = getDashboardStore()) {
         }
     });
     
-    return Object.values(clientData)
-        .sort((a, b) => b.vehicleCount - a.vehicleCount)
-        .slice(0, limit);
+    const dummyClients = [
+        { name: 'ABC Logistics', vehicleCount: 4600, monthlyPayments: 420000 },
+        { name: 'Fast Transport', vehicleCount: 3200, monthlyPayments: 315000 },
+        { name: 'Prime Movers', vehicleCount: 1850, monthlyPayments: 275000 },
+        { name: 'Global Freight', vehicleCount: 1025, monthlyPayments: 210000 },
+        { name: 'Swift Haulage', vehicleCount: 875, monthlyPayments: 198000 }
+    ];
+
+    return dummyClients.slice(0, limit);
 }
 // Get payment status from actual data
 function getPaymentStatus(dataStore = getDashboardStore(), selectedMonthKey = null) {
