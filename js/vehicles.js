@@ -826,7 +826,7 @@ function showAddVehicleModal() {
                 
                 <div>
                     <label style="display: block; margin-bottom: 6px; font-weight: 600;">Installation Date *</label>
-                    <input type="date" id="vehicle-install-date" required style="width: 100%; padding: 10px; border: 1px solid var(--gray-300); border-radius: 4px; box-sizing: border-box;">
+                    <input type="date" id="vehicle-install-date" required class="date-input">
                 </div>
                 
                 <div>
@@ -1253,7 +1253,7 @@ function editVehicle(vehicleId) {
                 
                 <div>
                     <label style="display: block; margin-bottom: 6px; font-weight: 600;">Date of Addition *</label>
-                    <input type="date" id="edit-vehicle-install-date" value="${existingInstallationDate}" required style="width: 100%; padding: 10px; border: 1px solid var(--gray-300); border-radius: 4px; box-sizing: border-box;">
+                    <input type="date" id="edit-vehicle-install-date" value="${existingInstallationDate}" required class="date-input">
                     <small style="color: var(--gray-500); margin-top: 4px; display: block;">Date is pre-filled from saved data.</small>
                 </div>
                 

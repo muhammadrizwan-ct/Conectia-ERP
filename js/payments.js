@@ -1578,7 +1578,7 @@ function showRecordSalaryExpenseModal(existingExpense = null) {
                     </div>
                     <div>
                         <label style="display: block; margin-bottom: 6px; font-weight: 600;">Expense Date</label>
-                        <input type="date" id="expense-date" value="${existingExpense?.expenseDate || today}" style="width: 100%; padding: 10px; border: 1px solid var(--gray-300); border-radius: 4px; box-sizing: border-box;">
+                        <input type="date" id="expense-date" value="${existingExpense?.expenseDate || today}" class="date-input">
                     </div>
                 </div>
 
@@ -2098,7 +2098,7 @@ function showRecordDailyExpenseModal(existingExpense = null) {
                     </div>
                     <div>
                         <label style="display: block; margin-bottom: 6px; font-weight: 600;">Expense Date</label>
-                        <input type="date" id="daily-expense-date" value="${existingExpense?.expenseDate || today}" style="width: 100%; padding: 10px; border: 1px solid var(--gray-300); border-radius: 4px; box-sizing: border-box;">
+                        <input type="date" id="daily-expense-date" value="${existingExpense?.expenseDate || today}" class="date-input">
                     </div>
                 </div>
 
@@ -3464,7 +3464,7 @@ function showRecordPaymentModal(prefillInvoiceNo = '') {
                         
                         <div>
                             <label style="display: block; margin-bottom: 6px; font-weight: 600; font-size: 14px;">Payment Date</label>
-                            <input type="date" id="payment-date" value="${new Date().toISOString().split('T')[0]}" style="width: 100%; padding: 10px; border: 1px solid var(--gray-300); border-radius: 4px; box-sizing: border-box;">
+                            <input type="date" id="payment-date" value="${new Date().toISOString().split('T')[0]}" class="date-input">
                         </div>
                         
                         <div style="grid-column: 1 / -1;">
@@ -3980,7 +3980,7 @@ function showEditClientPaymentModal(paymentId) {
                 <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 16px;">
                     <div>
                         <label style="display: block; margin-bottom: 6px; font-weight: 600;">Payment Date</label>
-                        <input type="date" id="edit-client-payment-date" value="${payment.paymentDate || ''}" style="width: 100%; padding: 10px; border: 1px solid var(--gray-300); border-radius: 4px; box-sizing: border-box;">
+                        <input type="date" id="edit-client-payment-date" value="${payment.paymentDate || ''}" class="date-input">
                     </div>
                     <div>
                         <label style="display: block; margin-bottom: 6px; font-weight: 600;">Tax Deduction Percentage (%)</label>
@@ -4313,7 +4313,7 @@ function showRecordVendorPaymentModal() {
                     </div>
                     <div>
                         <label style="display: block; margin-bottom: 6px; font-weight: 600;">Payment Date</label>
-                        <input type="date" id="vendor-payment-date" value="${new Date().toISOString().split('T')[0]}" style="width: 100%; padding: 10px; border: 1px solid var(--gray-300); border-radius: 4px; box-sizing: border-box;">
+                        <input type="date" id="vendor-payment-date" value="${new Date().toISOString().split('T')[0]}" class="date-input">
                     </div>
                 </div>
 
@@ -4701,7 +4701,7 @@ function showEditVendorPaymentModal(paymentId) {
                     </div>
                     <div>
                         <label style="display: block; margin-bottom: 6px; font-weight: 600;">Payment Date</label>
-                        <input type="date" id="edit-vendor-payment-date" value="${payment.paymentDate || ''}" style="width: 100%; padding: 10px; border: 1px solid var(--gray-300); border-radius: 4px; box-sizing: border-box;">
+                        <input type="date" id="edit-vendor-payment-date" value="${payment.paymentDate || ''}" class="date-input">
                     </div>
                 </div>
 

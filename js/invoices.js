@@ -2010,7 +2010,7 @@ async function showRecordVendorInvoiceModal() {
                     </div>
                     <div>
                         <label style="display: block; margin-bottom: 6px; font-weight: 600;">Invoice Date</label>
-                        <input type="date" id="vendor-invoice-date" value="${new Date().toISOString().split('T')[0]}" style="width: 100%; padding: 10px; border: 1px solid var(--gray-300); border-radius: 4px; box-sizing: border-box;">
+                        <input type="date" id="vendor-invoice-date" value="${new Date().toISOString().split('T')[0]}" class="date-input">
                     </div>
                 </div>
 
@@ -2159,7 +2159,7 @@ function showEditVendorInvoiceModal(invoiceNo) {
                     </div>
                     <div>
                         <label style="display: block; margin-bottom: 6px; font-weight: 600;">Invoice Date</label>
-                        <input type="date" id="edit-vendor-invoice-date" value="${inv.invoiceDate || ''}" style="width: 100%; padding: 10px; border: 1px solid var(--gray-300); border-radius: 4px; box-sizing: border-box;">
+                        <input type="date" id="edit-vendor-invoice-date" value="${inv.invoiceDate || ''}" class="date-input">
                     </div>
                 </div>
                 <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 16px;">
@@ -3419,7 +3419,7 @@ async function showGenerateInvoiceModal() {
                     
                     <div class="form-group">
                         <label>Invoice Date</label>
-                        <input type="date" id="invoice-date" value="${new Date().toISOString().split('T')[0]}" required>
+                        <input type="date" id="invoice-date" value="${new Date().toISOString().split('T')[0]}" required class="date-input">
                     </div>
                 </div>
                 
@@ -3467,7 +3467,7 @@ async function showGenerateInvoiceModal() {
                     
                     <div class="form-group">
                         <label>Due Date</label>
-                        <input type="date" id="invoice-due-date" value="${getDefaultDueDate()}" required>
+                        <input type="date" id="invoice-due-date" value="${getDefaultDueDate()}" required class="date-input">
                     </div>
                 </div>
                 
@@ -4373,7 +4373,7 @@ function recordPaymentForInvoice(invoiceNo) {
             </div>
             <div class="form-group">
                 <label>Payment Date *</label>
-                <input type="date" id="payment-date" value="${new Date().toISOString().split('T')[0]}" required>
+                <input type="date" id="payment-date" value="${new Date().toISOString().split('T')[0]}" required class="date-input">
             </div>
             <div class="form-group">
                 <label>Payment Mode *</label>

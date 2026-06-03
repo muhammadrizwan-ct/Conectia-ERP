@@ -508,7 +508,7 @@ async function showCreateTicketModal() {
                     </div>
                     <div style="margin-bottom: 12px;">
                         <label style="font-weight: 600; margin-bottom: 4px; display: block;">Due Date</label>
-                        <input type="date" id="ticket-due-date" style="width: 100%; padding: 8px 12px; border: 1px solid var(--gray-300); border-radius: 6px;">
+                        <input type="date" id="ticket-due-date" class="date-input">
                     </div>
                 </div>
                 <div class="modal-footer" style="display: flex; gap: 10px; justify-content: flex-end; padding: 16px;">
@@ -1090,7 +1090,7 @@ async function showUpdateTicketStatusModal(ticketId) {
                         </div>
                         <div>
                             <label style="font-weight: 600; margin-bottom: 4px; display: block;">Due Date</label>
-                            <input type="date" id="update-ticket-due-date" value="${escapeHtmlTickets(ticket.due_date || '')}" style="width: 100%; padding: 8px 12px; border: 1px solid var(--gray-300); border-radius: 6px;">
+                            <input type="date" id="update-ticket-due-date" value="${escapeHtmlTickets(ticket.due_date || '')}" class="date-input">
                         </div>
                     </div>
                 </div>
