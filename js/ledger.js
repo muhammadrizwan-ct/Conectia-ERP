@@ -19,6 +19,17 @@ function normalizePaymentScope(value, fallback = 'client') {
     return fallback;
 }
 
+function normalizePaymentLineItem(item) {
+    if (!item || typeof item !== 'object') return null;
+    return {
+        ...item,
+        invoiceNo: String(item.invoiceNo || item.invoice_no || '').trim(),
+        clientName: String(item.clientName || item.client_name || '').trim(),
+        invoiceAmount: Number(item.invoiceAmount ?? item.invoice_amount ?? 0) || 0,
+        allocatedAmount: Number(item.allocatedAmount ?? item.allocated_amount ?? 0) || 0
+    };
+}
+
 function normalizeClientPaymentForLedger(record = {}) {
     const details = record.details && typeof record.details === 'object' ? record.details : {};
     const parseArrayValue = (value) => {
@@ -38,6 +49,7 @@ function normalizeClientPaymentForLedger(record = {}) {
         .concat(parseArrayValue(record.line_items))
         .concat(parseArrayValue(details.lineItems))
         .concat(parseArrayValue(details.line_items))
+        .map(normalizePaymentLineItem)
         .filter((item) => item && typeof item === 'object');
 
     const firstLineItem = lineItems[0] || {};
