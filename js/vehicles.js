@@ -269,6 +269,8 @@ async function loadVehiclesFromStorage() {
     return await fetchVehiclesFromSupabase();
 }
 
+const VEHICLE_IMPORT_OVERLAY_ID = 'vehicle-import-overlay';
+
 async function saveVehiclesToStorage(vehicle) {
     if (!vehicle || typeof vehicle !== 'object') {
         return null;
@@ -277,13 +279,62 @@ async function saveVehiclesToStorage(vehicle) {
     return await saveVehicleToSupabase(vehicle);
 }
 
+function createVehicleImportOverlay(totalCount) {
+    try {
+        removeVehicleImportOverlay();
+        const overlay = document.createElement('div');
+        overlay.id = VEHICLE_IMPORT_OVERLAY_ID;
+        overlay.style = 'position: fixed; inset: 0; display:flex; align-items:center; justify-content:center; background: rgba(0,0,0,0.45); z-index: 99999;';
+        overlay.innerHTML = `<div style="background: #fff; padding: 20px 28px; border-radius: 8px; display:flex; gap:12px; align-items:center; box-shadow: 0 8px 24px rgba(0,0,0,0.25); max-width: 420px;">
+            <div class=\"spinner\" style=\"width:28px;height:28px;border:4px solid #e5e7eb;border-top-color:#2563eb;border-radius:50%;animation:spin 1s linear infinite;\"></div>
+            <div style=\"display:flex; flex-direction:column; gap:6px;\">
+                <div style=\"font-weight:700; color:#111827;\">Uploading vehicles...</div>
+                <div id=\"vehicle-import-progress\" style=\"color:#374151; font-size: 14px;\">0 / ${totalCount}</div>
+            </div>
+        </div>`;
+        document.body.appendChild(overlay);
+        if (!document.getElementById('vehicle-import-overlay-style')) {
+            const style = document.createElement('style');
+            style.id = 'vehicle-import-overlay-style';
+            style.innerHTML = '@keyframes spin { to { transform: rotate(360deg); } }';
+            document.head.appendChild(style);
+        }
+    } catch (e) {
+        console.warn('Failed to create import overlay', e);
+    }
+}
+
+function updateVehicleImportOverlayProgress(processed, total) {
+    try {
+        const label = document.getElementById('vehicle-import-progress');
+        if (label) {
+            label.textContent = `${processed} / ${total}`;
+        }
+    } catch (e) {
+        console.warn('Failed to update import progress', e);
+    }
+}
+
+function removeVehicleImportOverlay() {
+    try {
+        const existing = document.getElementById(VEHICLE_IMPORT_OVERLAY_ID);
+        if (existing) existing.remove();
+    } catch (e) {
+        console.warn('Failed to remove import overlay', e);
+    }
+}
+
 async function saveVehiclesBatchToSupabase(vehicles = []) {
     const source = Array.isArray(vehicles) ? vehicles : [];
     const savedVehicles = [];
     const failedVehicles = [];
 
-    for (const vehicle of source) {
+    for (let index = 0; index < source.length; index += 1) {
+        const vehicle = source[index];
         const saved = await saveVehicleToSupabase(vehicle);
+        const processed = index + 1;
+        updateVehicleImportOverlayProgress(processed, source.length);
+
         if (saved) {
             savedVehicles.push(saved);
         } else {
@@ -1839,26 +1890,6 @@ function handleVehicleImportFile(event) {
 
     const reader = new FileReader();
     reader.onload = async (loadEvent) => {
-        // Show a persistent uploading overlay until import completes
-        const overlayId = 'vehicle-import-overlay';
-        try {
-            let existing = document.getElementById(overlayId);
-            if (!existing) {
-                const overlay = document.createElement('div');
-                overlay.id = overlayId;
-                overlay.style = 'position: fixed; inset: 0; display:flex; align-items:center; justify-content:center; background: rgba(0,0,0,0.45); z-index: 99999;';
-                overlay.innerHTML = `<div style="background: #fff; padding: 20px 28px; border-radius: 8px; display:flex; gap:12px; align-items:center; box-shadow: 0 8px 24px rgba(0,0,0,0.25);">
-                    <div class=\"spinner\" style=\"width:28px;height:28px;border:4px solid #e5e7eb;border-top-color:#2563eb;border-radius:50%;animation:spin 1s linear infinite;\"></div>
-                    <div style=\"font-weight:600; color:#111827;\">Uploading vehicles... Please wait</div>
-                </div>`;
-                document.body.appendChild(overlay);
-                const style = document.createElement('style');
-                style.innerHTML = '@keyframes spin { to { transform: rotate(360deg); } }';
-                document.head.appendChild(style);
-            }
-        } catch (e) {
-            console.warn('Failed to show import overlay', e);
-        }
         try {
             const arrayBuffer = loadEvent.target.result;
             const workbook = XLSX.read(arrayBuffer, { type: 'array', cellDates: true });
@@ -2024,6 +2055,7 @@ function handleVehicleImportFile(event) {
                 return;
             }
 
+            createVehicleImportOverlay(newVehicles.length);
             const { savedVehicles, failedVehicles } = await saveVehiclesBatchToSupabase(newVehicles);
 
             if (savedVehicles.length > 0) {
@@ -2063,11 +2095,7 @@ function handleVehicleImportFile(event) {
             console.error('Vehicle import error:', error);
             showNotification('Import failed. Please check file format and try again.', 'error');
         } finally {
-            // Remove overlay
-            try {
-                const existing = document.getElementById('vehicle-import-overlay');
-                if (existing) existing.remove();
-            } catch (e) { /* ignore */ }
+            removeVehicleImportOverlay();
 
             if (fileInput) {
                 fileInput.value = '';
