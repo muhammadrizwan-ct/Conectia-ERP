@@ -143,6 +143,23 @@
     <script src="js/auth.js?v=20260401-02"></script>
     <script src="js/reports.js?v=20260401-02"></script>
     <script src="js/app.js?v=20260303-30"></script>
+    <script>
+        // Clear any persisted/demo dashboard state so the app loads live Supabase data
+        try {
+            if (window.dashboardDataStore) delete window.dashboardDataStore;
+            if (typeof clearPersistedBusinessData === 'function') {
+                clearPersistedBusinessData();
+            } else {
+                localStorage.removeItem('vts_clients');
+                localStorage.removeItem('vts_vehicles');
+                localStorage.removeItem('vts_invoices');
+                localStorage.removeItem('vts_payments');
+            }
+            sessionStorage.removeItem('currentPage');
+        } catch (e) {
+            console.warn('Clear demo state failed', e);
+        }
+    </script>
     <script src="js/dashboard.js?v=20260604-01"></script>
     <script src="js/clients.js?v=20260508-02"></script>
     <script src="js/vehicles.js?v=20260307-57"></script>
