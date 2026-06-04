@@ -1839,6 +1839,26 @@ function handleVehicleImportFile(event) {
 
     const reader = new FileReader();
     reader.onload = async (loadEvent) => {
+        // Show a persistent uploading overlay until import completes
+        const overlayId = 'vehicle-import-overlay';
+        try {
+            let existing = document.getElementById(overlayId);
+            if (!existing) {
+                const overlay = document.createElement('div');
+                overlay.id = overlayId;
+                overlay.style = 'position: fixed; inset: 0; display:flex; align-items:center; justify-content:center; background: rgba(0,0,0,0.45); z-index: 99999;';
+                overlay.innerHTML = `<div style="background: #fff; padding: 20px 28px; border-radius: 8px; display:flex; gap:12px; align-items:center; box-shadow: 0 8px 24px rgba(0,0,0,0.25);">
+                    <div class=\"spinner\" style=\"width:28px;height:28px;border:4px solid #e5e7eb;border-top-color:#2563eb;border-radius:50%;animation:spin 1s linear infinite;\"></div>
+                    <div style=\"font-weight:600; color:#111827;\">Uploading vehicles... Please wait</div>
+                </div>`;
+                document.body.appendChild(overlay);
+                const style = document.createElement('style');
+                style.innerHTML = '@keyframes spin { to { transform: rotate(360deg); } }';
+                document.head.appendChild(style);
+            }
+        } catch (e) {
+            console.warn('Failed to show import overlay', e);
+        }
         try {
             const arrayBuffer = loadEvent.target.result;
             const workbook = XLSX.read(arrayBuffer, { type: 'array', cellDates: true });
@@ -1850,7 +1870,14 @@ function handleVehicleImportFile(event) {
                 return;
             }
 
-            const rows = XLSX.utils.sheet_to_json(worksheet, { defval: '' });
+            let rows = XLSX.utils.sheet_to_json(worksheet, { defval: '' });
+
+            // Enforce maximum rows per request to avoid long-running imports
+            const IMPORT_MAX_ROWS = 1000; // per request cap as requested
+            if (Array.isArray(rows) && rows.length > IMPORT_MAX_ROWS) {
+                showNotification(`Import contains ${rows.length} rows — only the first ${IMPORT_MAX_ROWS} rows will be processed.`, 'warning');
+                rows = rows.slice(0, IMPORT_MAX_ROWS);
+            }
 
             if (!rows || rows.length === 0) {
                 showNotification('Selected file has no data rows.', 'error');
@@ -2036,6 +2063,12 @@ function handleVehicleImportFile(event) {
             console.error('Vehicle import error:', error);
             showNotification('Import failed. Please check file format and try again.', 'error');
         } finally {
+            // Remove overlay
+            try {
+                const existing = document.getElementById('vehicle-import-overlay');
+                if (existing) existing.remove();
+            } catch (e) { /* ignore */ }
+
             if (fileInput) {
                 fileInput.value = '';
             }
