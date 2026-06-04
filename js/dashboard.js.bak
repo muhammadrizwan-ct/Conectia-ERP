@@ -1,0 +1,799 @@
+// Dashboard Module
+let dashboardRevenueChart = null;
+let dashboardCategoryChart = null;
+let dashboardPaymentChart = null;
+
+function withTimeout(promise, timeoutMs = 2000) {
+    return Promise.race([
+        promise,
+        new Promise((_, reject) => setTimeout(() => reject(new Error('timeout')), timeoutMs))
+    ]);
+}
+
+function isDashboardStillActive() {
+    return (sessionStorage.getItem('currentPage') || '') === 'dashboard';
+}
+
+function getDashboardStore() {
+    return window.dashboardDataStore || {
+        clients: [],
+        vehicles: [],
+        invoices: [],
+        payments: []
+    };
+}
+
+function getCurrentMonthKey() {
+    const now = new Date();
+    return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
+}
+
+function formatMonthKeyLabel(monthKey) {
+    const [yearText, monthText] = String(monthKey || '').split('-');
+    const year = Number(yearText);
+    const month = Number(monthText);
+    if (!Number.isInteger(year) || !Number.isInteger(month) || month < 1 || month > 12) {
+        return 'Current Month';
+    }
+
+    const date = new Date(year, month - 1, 1);
+    return date.toLocaleDateString('en-US', { month: 'short', year: 'numeric' });
+}
+
+function getRecordDate(record = {}, candidates = []) {
+    for (const key of candidates) {
+        const value = record?.[key];
+        if (!value) continue;
+
+        const date = new Date(value);
+        if (!Number.isNaN(date.getTime())) {
+            return date;
+        }
+    }
+
+    return null;
+}
+
+function toMonthKeyFromDate(date) {
+    if (!(date instanceof Date) || Number.isNaN(date.getTime())) return null;
+    return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`;
+}
+
+function isDateInMonthKey(date, monthKey) {
+    if (!date || !monthKey) return false;
+    return toMonthKeyFromDate(date) === monthKey;
+}
+
+function collectDashboardMonthKeys(dataStore = getDashboardStore()) {
+    const keys = new Set();
+
+    const addFromRecords = (records = [], dateFields = []) => {
+        records.forEach((record) => {
+            const date = getRecordDate(record, dateFields);
+            const monthKey = toMonthKeyFromDate(date);
+            if (monthKey) {
+                keys.add(monthKey);
+            }
+        });
+    };
+
+    addFromRecords(dataStore.clients, ['created_at', 'createdAt', 'dateAdded', 'addedAt', 'created']);
+    addFromRecords(dataStore.vehicles, ['installationDate', 'installDate', 'install_date', 'created_at', 'createdAt', 'dateAdded']);
+    addFromRecords(dataStore.invoices, ['invoiceDate', 'invoice_date', 'date', 'created_at', 'createdAt']);
+
+    // Always include the last 12 months so users can browse previous months
+    const now = new Date();
+    for (let i = 0; i < 12; i++) {
+        const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
+        keys.add(`${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`);
+    }
+
+    return Array.from(keys).sort((a, b) => b.localeCompare(a));
+}
+
+function buildDashboardMonthOptions(selectedMonthKey, dataStore = getDashboardStore()) {
+    const monthKeys = collectDashboardMonthKeys(dataStore);
+    return monthKeys.map((key) => {
+        const selectedAttr = key === selectedMonthKey ? 'selected' : '';
+        return `<option value="${key}" ${selectedAttr}>${formatMonthKeyLabel(key)}</option>`;
+    }).join('');
+}
+
+async function hydrateDashboardDataStore() {
+    const store = {
+        clients: [],
+        vehicles: [],
+        invoices: [],
+        payments: []
+    };
+
+    const settleList = await Promise.allSettled([
+        (typeof fetchClientsFromSupabase === 'function') ? withTimeout(fetchClientsFromSupabase(), 5000) : Promise.resolve([]),
+        (typeof fetchVehiclesFromSupabase === 'function') ? withTimeout(fetchVehiclesFromSupabase(), 5000) : Promise.resolve([]),
+        (typeof fetchInvoicesFromSupabase === 'function') ? withTimeout(fetchInvoicesFromSupabase(), 5000) : Promise.resolve([]),
+        (typeof fetchPaymentsFromSupabase === 'function') ? withTimeout(fetchPaymentsFromSupabase(), 5000) : Promise.resolve([])
+    ]);
+
+    const [clientsRes, vehiclesRes, invoicesRes, paymentsRes] = settleList;
+    if (clientsRes.status === 'fulfilled' && Array.isArray(clientsRes.value)) {
+        store.clients = clientsRes.value;
+    }
+    if (vehiclesRes.status === 'fulfilled' && Array.isArray(vehiclesRes.value)) {
+        store.vehicles = vehiclesRes.value;
+    }
+    if (invoicesRes.status === 'fulfilled' && Array.isArray(invoicesRes.value)) {
+        store.invoices = invoicesRes.value;
+    }
+    if (paymentsRes.status === 'fulfilled' && Array.isArray(paymentsRes.value)) {
+        store.payments = paymentsRes.value;
+    }
+
+    window.dashboardDataStore = store;
+    return store;
+}
+
+async function loadDashboard() {
+    // Dashboard download actions
+    document.getElementById('header-actions').innerHTML = `
+        <button class="btn btn-sm btn-primary btn-export" onclick="exportDashboardPDF()" title="Download Dashboard PDF" aria-label="Download Dashboard PDF">
+            <i class="fas fa-file-pdf"></i>
+        </button>
+        <button class="btn btn-sm btn-success btn-export" onclick="exportDashboardExcel()" title="Download Dashboard Excel" aria-label="Download Dashboard Excel">
+            <i class="fas fa-file-excel"></i>
+        </button>
+    `;
+    
+    const contentEl = document.getElementById('content-body');
+    const previousMonthKey = document.getElementById('dashboard-month-filter')?.value || getCurrentMonthKey();
+    const monthOptions = buildDashboardMonthOptions(previousMonthKey);
+    
+    contentEl.innerHTML = `
+        <div class="card" style="margin-bottom: 16px;">
+            <div class="card-body" style="display: flex; justify-content: space-between; align-items: center; gap: 12px; flex-wrap: wrap;">
+                <h3 style="margin: 0;">Dashboard Summary</h3>
+                <div style="display: flex; align-items: center; gap: 8px;">
+                    <label for="dashboard-month-filter" style="font-size: 13px; color: var(--gray-600); font-weight: 600;">Month</label>
+                    <select id="dashboard-month-filter" onchange="loadDashboard()" style="padding: 8px 10px; border: 1px solid var(--gray-300); border-radius: 6px; min-width: 150px;">
+                        ${monthOptions}
+                    </select>
+                </div>
+            </div>
+        </div>
+
+        <div class="stats-grid" id="dashboard-stats">
+            <!-- Stats will be loaded here -->
+        </div>
+        
+        <div style="display: grid; grid-template-columns: 2fr 1fr; gap: 24px;">
+            <div class="card">
+                <div class="card-header">
+                    <h3>Monthly Revenue</h3>
+                    <select id="revenue-year" onchange="loadDashboard()">
+                        ${generateYearOptions()}
+                    </select>
+                </div>
+                <div class="card-body">
+                    <canvas id="revenue-chart"></canvas>
+                </div>
+            </div>
+            
+            <div class="card">
+                <div class="card-header">
+                    <h3>Top Pending Clients</h3>
+                </div>
+                <div class="card-body">
+                    <div id="top-clients-list"></div>
+                </div>
+            </div>
+        </div>
+        
+        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 24px; margin-top: 24px;">
+            <div class="card">
+                <div class="card-header">
+                    <h3>Clients by Vehicles</h3>
+                </div>
+                <div class="card-body">
+                    <canvas id="category-chart"></canvas>
+                </div>
+            </div>
+            
+            <div class="card">
+                <div class="card-header">
+                    <h3>Payment Status</h3>
+                </div>
+                <div class="card-body" style="display: flex; flex-direction: column; gap: 8px;">
+                    <div style="height: 220px; max-height: 220px;">
+                        <canvas id="payment-chart"></canvas>
+                    </div>
+                    <div id="payment-status-amounts" style="margin-top: 4px;"></div>
+                </div>
+            </div>
+        </div>
+        
+    `;
+    
+    try {
+        const selectedYear = Number(document.getElementById('revenue-year')?.value) || new Date().getFullYear();
+        const dataStore = await hydrateDashboardDataStore();
+        const selectedMonthKey = document.getElementById('dashboard-month-filter')?.value || getCurrentMonthKey();
+
+        const [topClients, monthlyData, paymentStatus] = await Promise.all([
+            Promise.resolve(getTopClientsFromData(5, dataStore, selectedMonthKey)),
+            Promise.resolve(getMonthlySummaryFromData(selectedYear, dataStore)),
+            Promise.resolve(getPaymentStatus(dataStore, selectedMonthKey))
+        ]);
+
+        const metrics = calculateDashboardMetrics(dataStore, selectedMonthKey);
+
+        // Avoid drawing stale results if user switched tabs while requests were in flight.
+        if (!isDashboardStillActive()) {
+            return;
+        }
+
+        displayDashboardStats(metrics);
+        displayTopClients(topClients);
+        displayCategoryChart();
+        displayRevenueChart(monthlyData);
+        displayPaymentChart(paymentStatus);
+    } catch (error) {
+        console.warn('Dashboard error:', error);
+    }
+}
+
+function buildDashboardExportData() {
+    const selectedYear = Number(document.getElementById('revenue-year')?.value) || new Date().getFullYear();
+    const selectedMonthKey = document.getElementById('dashboard-month-filter')?.value || getCurrentMonthKey();
+    const dataStore = getDashboardStore();
+    const metrics = calculateDashboardMetrics(dataStore, selectedMonthKey);
+    const topClients = getTopClientsFromData(10, dataStore);
+    const monthlyData = getMonthlySummaryFromData(selectedYear, dataStore);
+    const paymentStatus = getPaymentStatus(dataStore, selectedMonthKey);
+
+    return {
+        selectedYear,
+        metrics,
+        topClients,
+        monthlyData,
+        paymentStatus,
+        generatedAt: new Date().toLocaleString('en-PK')
+    };
+}
+
+function exportDashboardExcel() {
+    if (typeof XLSX === 'undefined') {
+        showNotification('Excel library not loaded. Please refresh and try again.', 'error');
+        return;
+    }
+
+    try {
+        const data = buildDashboardExportData();
+
+        const summaryRows = [
+            { Metric: 'Generated At', Value: data.generatedAt },
+            { Metric: 'Year', Value: data.selectedYear },
+            { Metric: 'Total Clients', Value: data.metrics.totalClients || 0 },
+            { Metric: 'Active Vehicles', Value: data.metrics.activeVehicles || 0 },
+            { Metric: 'Monthly Revenue', Value: data.metrics.monthlyRevenue || 0 },
+            { Metric: 'Total Receivable', Value: data.metrics.totalPending || 0 },
+            { Metric: 'Collection Rate (%)', Value: data.metrics.collectionRate || 0 },
+            { Metric: 'Payment Status - Paid', Value: data.paymentStatus.paid || 0 },
+            { Metric: 'Payment Status - Pending', Value: data.paymentStatus.pending || 0 },
+            { Metric: 'Payment Status - Overdue', Value: data.paymentStatus.overdue || 0 }
+        ];
+
+        const topClientsRows = (data.topClients || []).map((item) => ({
+            Client: item.name || '-',
+            OpenInvoices: item.invoiceCount || 0,
+            PendingAmount: item.balance || 0
+        }));
+
+        const monthlyRows = (data.monthlyData || []).map((item) => ({
+            Month: item.month,
+            Revenue: item.total || 0
+        }));
+
+        const workbook = XLSX.utils.book_new();
+        XLSX.utils.book_append_sheet(workbook, XLSX.utils.json_to_sheet(summaryRows), 'Summary');
+        XLSX.utils.book_append_sheet(workbook, XLSX.utils.json_to_sheet(topClientsRows), 'TopClients');
+        XLSX.utils.book_append_sheet(workbook, XLSX.utils.json_to_sheet(monthlyRows), 'MonthlyRevenue');
+
+        XLSX.writeFile(workbook, `dashboard_report_${Date.now()}.xlsx`);
+        showNotification('Dashboard Excel downloaded successfully', 'success');
+    } catch (error) {
+        console.error('Dashboard Excel export error:', error);
+        showNotification('Failed to download Dashboard Excel', 'error');
+    }
+}
+
+function exportDashboardPDF() {
+    const JsPdfConstructor =
+        (typeof window !== 'undefined' && window.jspdf && window.jspdf.jsPDF)
+        || (typeof jsPDF !== 'undefined' ? jsPDF : null);
+
+    if (!JsPdfConstructor) {
+        showNotification('PDF library not loaded. Please refresh and try again.', 'error');
+        return;
+    }
+
+    try {
+        const data = buildDashboardExportData();
+        const doc = new JsPdfConstructor({ orientation: 'landscape', unit: 'mm', format: 'a4' });
+
+        doc.setFontSize(14);
+        doc.text('Dashboard Report', 14, 12);
+        doc.setFontSize(10);
+        doc.text(`Generated: ${data.generatedAt}`, 14, 18);
+        doc.text(`Year: ${data.selectedYear}`, 14, 23);
+
+        const summaryRows = [
+            ['Total Clients', String(data.metrics.totalClients || 0)],
+            ['Active Vehicles', String(data.metrics.activeVehicles || 0)],
+            ['Monthly Revenue', formatPKR(data.metrics.monthlyRevenue || 0)],
+            ['Total Receivable', formatPKR(data.metrics.totalPending || 0)],
+            ['Collection Rate', `${data.metrics.collectionRate || 0}%`],
+            ['Paid/Pending/Overdue', `${data.paymentStatus.paid || 0} / ${data.paymentStatus.pending || 0} / ${data.paymentStatus.overdue || 0}`]
+        ];
+
+        if (typeof doc.autoTable === 'function') {
+            doc.autoTable({
+                startY: 28,
+                head: [['Metric', 'Value']],
+                body: summaryRows,
+                styles: { fontSize: 9 },
+                headStyles: { fillColor: [37, 99, 235] },
+                margin: { left: 14, right: 14 }
+            });
+
+            const topClientsRows = (data.topClients || []).slice(0, 10).map((item) => [
+                item.name || '-',
+                String(item.invoiceCount || 0),
+                formatPKR(item.balance || 0)
+            ]);
+
+            doc.autoTable({
+                startY: doc.lastAutoTable.finalY + 8,
+                head: [['Top Client', 'Open Invoices', 'Pending Amount']],
+                body: topClientsRows,
+                styles: { fontSize: 9 },
+                headStyles: { fillColor: [5, 150, 105] },
+                margin: { left: 14, right: 14 }
+            });
+        }
+
+        doc.save(`dashboard_report_${Date.now()}.pdf`);
+        showNotification('Dashboard PDF downloaded successfully', 'success');
+    } catch (error) {
+        console.error('Dashboard PDF export error:', error);
+        showNotification('Failed to download Dashboard PDF', 'error');
+    }
+}
+
+function displayDashboardStats(metrics) {
+    const statsEl = document.getElementById('dashboard-stats');
+    const monthLabel = metrics.selectedMonthLabel || 'Selected Month';
+    
+    statsEl.innerHTML = `
+        <div class="stat-card">
+            <div>
+                <h4>Total Clients</h4>
+                <div class="stat-number">${metrics.totalClients || 0}</div>
+                <div class="stat-change positive">+${metrics.newClients || 0} added in ${monthLabel}</div>
+            </div>
+            <div class="stat-icon">
+                <i class="fas fa-users"></i>
+            </div>
+        </div>
+        
+        <div class="stat-card">
+            <div>
+                <h4>Total Vehicles</h4>
+                <div class="stat-number">${metrics.activeVehicles || 0}</div>
+                <div class="stat-change positive">+${metrics.newVehicles || 0} added in ${monthLabel}</div>
+            </div>
+            <div class="stat-icon">
+                <i class="fas fa-car"></i>
+            </div>
+        </div>
+        
+        <div class="stat-card">
+            <div>
+                <h4>Total Revenue</h4>// Dashboard Module
+let dashboardRevenueChart = null;
+let dashboardCategoryChart = null;
+let dashboardPaymentChart = null;
+
+function withTimeout(promise, timeoutMs = 2000) {
+    return Promise.race([
+        promise,
+        new Promise((_, reject) => setTimeout(() => reject(new Error('timeout')), timeoutMs))
+    ]);
+}
+
+function isDashboardStillActive() {
+    return (sessionStorage.getItem('currentPage') || '') === 'dashboard';
+}
+
+function getDashboardStore() {
+    return window.dashboardDataStore || {
+        clients: [],
+        vehicles: [],
+        invoices: [],
+        payments: []
+    };
+}
+
+function getCurrentMonthKey() {
+    const now = new Date();
+    return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
+}
+
+function formatMonthKeyLabel(monthKey) {
+    const [yearText, monthText] = String(monthKey || '').split('-');
+    const year = Number(yearText);
+    const month = Number(monthText);
+    if (!Number.isInteger(year) || !Number.isInteger(month) || month < 1 || month > 12) {
+        return 'Current Month';
+    }
+
+    const date = new Date(year, month - 1, 1);
+    return date.toLocaleDateString('en-US', { month: 'short', year: 'numeric' });
+}
+
+function getRecordDate(record = {}, candidates = []) {
+    for (const key of candidates) {
+        const value = record?.[key];
+        if (!value) continue;
+
+        const date = new Date(value);
+        if (!Number.isNaN(date.getTime())) {
+            return date;
+        }
+    }
+
+    return null;
+}
+
+function toMonthKeyFromDate(date) {
+    if (!(date instanceof Date) || Number.isNaN(date.getTime())) return null;
+    return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`;
+}
+
+function isDateInMonthKey(date, monthKey) {
+    if (!date || !monthKey) return false;
+    return toMonthKeyFromDate(date) === monthKey;
+}
+
+function collectDashboardMonthKeys(dataStore = getDashboardStore()) {
+    const keys = new Set();
+
+    const addFromRecords = (records = [], dateFields = []) => {
+        records.forEach((record) => {
+            const date = getRecordDate(record, dateFields);
+            const monthKey = toMonthKeyFromDate(date);
+            if (monthKey) {
+                keys.add(monthKey);
+            }
+        });
+    };
+
+    addFromRecords(dataStore.clients, ['created_at', 'createdAt', 'dateAdded', 'addedAt', 'created']);
+    addFromRecords(dataStore.vehicles, ['installationDate', 'installDate', 'install_date', 'created_at', 'createdAt', 'dateAdded']);
+    addFromRecords(dataStore.invoices, ['invoiceDate', 'invoice_date', 'date', 'created_at', 'createdAt']);
+
+    // Always include the last 12 months so users can browse previous months
+    const now = new Date();
+    for (let i = 0; i < 12; i++) {
+        const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
+        keys.add(`${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`);
+    }
+
+    return Array.from(keys).sort((a, b) => b.localeCompare(a));
+}
+
+function buildDashboardMonthOptions(selectedMonthKey, dataStore = getDashboardStore()) {
+    const monthKeys = collectDashboardMonthKeys(dataStore);
+    return monthKeys.map((key) => {
+        const selectedAttr = key === selectedMonthKey ? 'selected' : '';
+        return `<option value="${key}" ${selectedAttr}>${formatMonthKeyLabel(key)}</option>`;
+    }).join('');
+}
+
+async function hydrateDashboardDataStore() {
+    const store = {
+        clients: [],
+        vehicles: [],
+        invoices: [],
+        payments: []
+    };
+
+    const settleList = await Promise.allSettled([
+        (typeof fetchClientsFromSupabase === 'function') ? withTimeout(fetchClientsFromSupabase(), 5000) : Promise.resolve([]),
+        (typeof fetchVehiclesFromSupabase === 'function') ? withTimeout(fetchVehiclesFromSupabase(), 5000) : Promise.resolve([]),
+        (typeof fetchInvoicesFromSupabase === 'function') ? withTimeout(fetchInvoicesFromSupabase(), 5000) : Promise.resolve([]),
+        (typeof fetchPaymentsFromSupabase === 'function') ? withTimeout(fetchPaymentsFromSupabase(), 5000) : Promise.resolve([])
+    ]);
+
+    const [clientsRes, vehiclesRes, invoicesRes, paymentsRes] = settleList;
+    if (clientsRes.status === 'fulfilled' && Array.isArray(clientsRes.value)) {
+        store.clients = clientsRes.value;
+    }
+    if (vehiclesRes.status === 'fulfilled' && Array.isArray(vehiclesRes.value)) {
+        store.vehicles = vehiclesRes.value;
+    }
+    if (invoicesRes.status === 'fulfilled' && Array.isArray(invoicesRes.value)) {
+        store.invoices = invoicesRes.value;
+    }
+    if (paymentsRes.status === 'fulfilled' && Array.isArray(paymentsRes.value)) {
+        store.payments = paymentsRes.value;
+    }
+
+    window.dashboardDataStore = store;
+    return store;
+}
+
+async function loadDashboard() {
+    // Dashboard download actions
+    document.getElementById('header-actions').innerHTML = `
+        <button class="btn btn-sm btn-primary btn-export" onclick="exportDashboardPDF()" title="Download Dashboard PDF" aria-label="Download Dashboard PDF">
+            <i class="fas fa-file-pdf"></i>
+        </button>
+        <button class="btn btn-sm btn-success btn-export" onclick="exportDashboardExcel()" title="Download Dashboard Excel" aria-label="Download Dashboard Excel">
+            <i class="fas fa-file-excel"></i>
+        </button>
+    `;
+    
+    const contentEl = document.getElementById('content-body');
+    const previousMonthKey = document.getElementById('dashboard-month-filter')?.value || getCurrentMonthKey();
+    const monthOptions = buildDashboardMonthOptions(previousMonthKey);
+    
+    contentEl.innerHTML = `
+        <div class="card" style="margin-bottom: 16px;">
+            <div class="card-body" style="display: flex; justify-content: space-between; align-items: center; gap: 12px; flex-wrap: wrap;">
+                <h3 style="margin: 0;">Dashboard Summary</h3>
+                <div style="display: flex; align-items: center; gap: 8px;">
+                    <label for="dashboard-month-filter" style="font-size: 13px; color: var(--gray-600); font-weight: 600;">Month</label>
+                    <select id="dashboard-month-filter" onchange="loadDashboard()" style="padding: 8px 10px; border: 1px solid var(--gray-300); border-radius: 6px; min-width: 150px;">
+                        ${monthOptions}
+                    </select>
+                </div>
+            </div>
+        </div>
+
+        <div class="stats-grid" id="dashboard-stats">
+            <!-- Stats will be loaded here -->
+        </div>
+        
+        <div style="display: grid; grid-template-columns: 2fr 1fr; gap: 24px;">
+            <div class="card">
+                <div class="card-header">
+                    <h3>Monthly Revenue</h3>
+                    <select id="revenue-year" onchange="loadDashboard()">
+                        ${generateYearOptions()}
+                    </select>
+                </div>
+                <div class="card-body">
+                    <canvas id="revenue-chart"></canvas>
+                </div>
+            </div>
+            
+            <div class="card">
+                <div class="card-header">
+                    <h3>Top Pending Clients</h3>
+                </div>
+                <div class="card-body">
+                    <div id="top-clients-list"></div>
+                </div>
+            </div>
+        </div>
+        
+        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 24px; margin-top: 24px;">
+            <div class="card">
+                <div class="card-header">
+                    <h3>Clients by Vehicles</h3>
+                </div>
+                <div class="card-body">
+                    <canvas id="category-chart"></canvas>
+                </div>
+            </div>
+            
+            <div class="card">
+                <div class="card-header">
+                    <h3>Payment Status</h3>
+                </div>
+                <div class="card-body" style="display: flex; flex-direction: column; gap: 8px;">
+                    <div style="height: 220px; max-height: 220px;">
+                        <canvas id="payment-chart"></canvas>
+                    </div>
+                    <div id="payment-status-amounts" style="margin-top: 4px;"></div>
+                </div>
+            </div>
+        </div>
+        
+    `;
+    
+    try {
+        const selectedYear = Number(document.getElementById('revenue-year')?.value) || new Date().getFullYear();
+        const dataStore = await hydrateDashboardDataStore();
+        const selectedMonthKey = document.getElementById('dashboard-month-filter')?.value || getCurrentMonthKey();
+
+        const [topClients, monthlyData, paymentStatus] = await Promise.all([
+            Promise.resolve(getTopClientsFromData(5, dataStore, selectedMonthKey)),
+            Promise.resolve(getMonthlySummaryFromData(selectedYear, dataStore)),
+            Promise.resolve(getPaymentStatus(dataStore, selectedMonthKey))
+        ]);
+
+        const metrics = calculateDashboardMetrics(dataStore, selectedMonthKey);
+
+        // Avoid drawing stale results if user switched tabs while requests were in flight.
+        if (!isDashboardStillActive()) {
+            return;
+        }
+
+        displayDashboardStats(metrics);
+        displayTopClients(topClients);
+        displayCategoryChart();
+        displayRevenueChart(monthlyData);
+        displayPaymentChart(paymentStatus);
+    } catch (error) {
+        console.warn('Dashboard error:', error);
+    }
+}
+
+function buildDashboardExportData() {
+    const selectedYear = Number(document.getElementById('revenue-year')?.value) || new Date().getFullYear();
+    const selectedMonthKey = document.getElementById('dashboard-month-filter')?.value || getCurrentMonthKey();
+    const dataStore = getDashboardStore();
+    const metrics = calculateDashboardMetrics(dataStore, selectedMonthKey);
+    const topClients = getTopClientsFromData(10, dataStore);
+    const monthlyData = getMonthlySummaryFromData(selectedYear, dataStore);
+    const paymentStatus = getPaymentStatus(dataStore, selectedMonthKey);
+
+    return {
+        selectedYear,
+        metrics,
+        topClients,
+        monthlyData,
+        paymentStatus,
+        generatedAt: new Date().toLocaleString('en-PK')
+    };
+}
+
+function exportDashboardExcel() {
+    if (typeof XLSX === 'undefined') {
+        showNotification('Excel library not loaded. Please refresh and try again.', 'error');
+        return;
+    }
+
+    try {
+        const data = buildDashboardExportData();
+
+        const summaryRows = [
+            { Metric: 'Generated At', Value: data.generatedAt },
+            { Metric: 'Year', Value: data.selectedYear },
+            { Metric: 'Total Clients', Value: data.metrics.totalClients || 0 },
+            { Metric: 'Active Vehicles', Value: data.metrics.activeVehicles || 0 },
+            { Metric: 'Monthly Revenue', Value: data.metrics.monthlyRevenue || 0 },
+            { Metric: 'Total Receivable', Value: data.metrics.totalPending || 0 },
+            { Metric: 'Collection Rate (%)', Value: data.metrics.collectionRate || 0 },
+            { Metric: 'Payment Status - Paid', Value: data.paymentStatus.paid || 0 },
+            { Metric: 'Payment Status - Pending', Value: data.paymentStatus.pending || 0 },
+            { Metric: 'Payment Status - Overdue', Value: data.paymentStatus.overdue || 0 }
+        ];
+
+        const topClientsRows = (data.topClients || []).map((item) => ({
+            Client: item.name || '-',
+            OpenInvoices: item.invoiceCount || 0,
+            PendingAmount: item.balance || 0
+        }));
+
+        const monthlyRows = (data.monthlyData || []).map((item) => ({
+            Month: item.month,
+            Revenue: item.total || 0
+        }));
+
+        const workbook = XLSX.utils.book_new();
+        XLSX.utils.book_append_sheet(workbook, XLSX.utils.json_to_sheet(summaryRows), 'Summary');
+        XLSX.utils.book_append_sheet(workbook, XLSX.utils.json_to_sheet(topClientsRows), 'TopClients');
+        XLSX.utils.book_append_sheet(workbook, XLSX.utils.json_to_sheet(monthlyRows), 'MonthlyRevenue');
+
+        XLSX.writeFile(workbook, `dashboard_report_${Date.now()}.xlsx`);
+        showNotification('Dashboard Excel downloaded successfully', 'success');
+    } catch (error) {
+        console.error('Dashboard Excel export error:', error);
+        showNotification('Failed to download Dashboard Excel', 'error');
+    }
+}
+
+function exportDashboardPDF() {
+    const JsPdfConstructor =
+        (typeof window !== 'undefined' && window.jspdf && window.jspdf.jsPDF)
+        || (typeof jsPDF !== 'undefined' ? jsPDF : null);
+
+    if (!JsPdfConstructor) {
+        showNotification('PDF library not loaded. Please refresh and try again.', 'error');
+        return;
+    }
+
+    try {
+        const data = buildDashboardExportData();
+        const doc = new JsPdfConstructor({ orientation: 'landscape', unit: 'mm', format: 'a4' });
+
+        doc.setFontSize(14);
+        doc.text('Dashboard Report', 14, 12);
+        doc.setFontSize(10);
+        doc.text(`Generated: ${data.generatedAt}`, 14, 18);
+        doc.text(`Year: ${data.selectedYear}`, 14, 23);
+
+        const summaryRows = [
+            ['Total Clients', String(data.metrics.totalClients || 0)],
+            ['Active Vehicles', String(data.metrics.activeVehicles || 0)],
+            ['Monthly Revenue', formatPKR(data.metrics.monthlyRevenue || 0)],
+            ['Total Receivable', formatPKR(data.metrics.totalPending || 0)],
+            ['Collection Rate', `${data.metrics.collectionRate || 0}%`],
+            ['Paid/Pending/Overdue', `${data.paymentStatus.paid || 0} / ${data.paymentStatus.pending || 0} / ${data.paymentStatus.overdue || 0}`]
+        ];
+
+        if (typeof doc.autoTable === 'function') {
+            doc.autoTable({
+                startY: 28,
+                head: [['Metric', 'Value']],
+                body: summaryRows,
+                styles: { fontSize: 9 },
+                headStyles: { fillColor: [37, 99, 235] },
+                margin: { left: 14, right: 14 }
+            });
+
+            const topClientsRows = (data.topClients || []).slice(0, 10).map((item) => [
+                item.name || '-',
+                String(item.invoiceCount || 0),
+                formatPKR(item.balance || 0)
+            ]);
+
+            doc.autoTable({
+                startY: doc.lastAutoTable.finalY + 8,
+                head: [['Top Client', 'Open Invoices', 'Pending Amount']],
+                body: topClientsRows,
+                styles: { fontSize: 9 },
+                headStyles: { fillColor: [5, 150, 105] },
+                margin: { left: 14, right: 14 }
+            });
+        }
+
+        doc.save(`dashboard_report_${Date.now()}.pdf`);
+        showNotification('Dashboard PDF downloaded successfully', 'success');
+    } catch (error) {
+        console.error('Dashboard PDF export error:', error);
+        showNotification('Failed to download Dashboard PDF', 'error');
+    }
+}
+
+function displayDashboardStats(metrics) {
+    const statsEl = document.getElementById('dashboard-stats');
+    const monthLabel = metrics.selectedMonthLabel || 'Selected Month';
+    
+    statsEl.innerHTML = `
+        <div class="stat-card">
+            <div>
+                <h4>Total Clients</h4>
+                <div class="stat-number">${metrics.totalClients || 0}</div>
+                <div class="stat-change positive">+${metrics.newClients || 0} added in ${monthLabel}</div>
+            </div>
+            <div class="stat-icon">
+                <i class="fas fa-users"></i>
+            </div>
+        </div>
+        
+        <div class="stat-card">
+            <div>
+                <h4>Total Vehicles</h4>
+                <div class="stat-number">${metrics.activeVehicles || 0}</div>
+                <div class="stat-change positive">+${metrics.newVehicles || 0} added in ${monthLabel}</div>
+            </div>
+            <div class="stat-icon">
+                <i class="fas fa-car"></i>
+            </div>
+        </div>
+        
+        <div class="stat-card">
+            <div>
+                <h4>Total Revenue</h4>

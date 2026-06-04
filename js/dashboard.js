@@ -218,21 +218,12 @@ async function loadDashboard() {
         const selectedMonthKey = document.getElementById('dashboard-month-filter')?.value || getCurrentMonthKey();
 
         const [topClients, monthlyData, paymentStatus] = await Promise.all([
-            Promise.resolve(getTopClientsFromData(5, dataStore)),
+            Promise.resolve(getTopClientsFromData(5, dataStore, selectedMonthKey)),
             Promise.resolve(getMonthlySummaryFromData(selectedYear, dataStore)),
             Promise.resolve(getPaymentStatus(dataStore, selectedMonthKey))
         ]);
 
-        const rawMetrics = calculateDashboardMetrics(dataStore, selectedMonthKey);
-        const metrics = {
-            ...rawMetrics,
-            totalClients: 65,
-            newClients: 12,
-            activeVehicles: 11250,
-            newVehicles: 285,
-            monthlyRevenue: 12150451,
-            totalPending: 4520036
-        };
+        const metrics = calculateDashboardMetrics(dataStore, selectedMonthKey);
 
         // Avoid drawing stale results if user switched tabs while requests were in flight.
         if (!isDashboardStillActive()) {
@@ -458,10 +449,14 @@ function displayTopClients(clients) {
 
 function displayRevenueChart(monthlyData) {
     const ctx = document.getElementById('revenue-chart').getContext('2d');
-    
     const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
-    const dummyRevenueData = [820000, 950000, 1020000, 980000, 1100000, 1150000, 1270000, 1310000, 1240000, 1180000, 1260000, 1280451];
-    const revenueData = dummyRevenueData;
+
+    // Build revenue array using actual monthlyData (array of {month: 1..12, total})
+    const revenueData = Array(12).fill(0).map((_, idx) => {
+        if (!Array.isArray(monthlyData)) return 0;
+        const found = monthlyData.find(m => Number(m.month) === idx + 1);
+        return Number(found?.total || 0) || 0;
+    });
     
     if (dashboardRevenueChart) {
         dashboardRevenueChart.destroy();
@@ -745,28 +740,63 @@ function calculateDashboardMetrics(dataStore = getDashboardStore(), selectedMont
     ).size;
     
     return {
-        totalClients: 65,
-        newClients: 12,
-        activeVehicles: 11250,
-        newVehicles: 285,
+        totalClients,
+        newClients,
+        activeVehicles,
+        newVehicles,
         vehicleCategories,
-        monthlyRevenue: 12150451,
+        monthlyRevenue,
         revenueGrowth: 0,
         collectionRate: 0,
-        totalPending: 4520036,
+        totalPending,
         selectedMonthKey,
         selectedMonthLabel: formatMonthKeyLabel(selectedMonthKey)
     };
 }
 
+function getInvoiceMonthKey(invoice = {}) {
+    const date = getRecordDate(invoice, ['invoiceDate', 'invoice_date', 'date', 'created_at', 'createdAt']);
+    return toMonthKeyFromDate(date);
+}
+
+function buildPaidAmountsByInvoice(payments = []) {
+    const paidByInvoice = {};
+
+    (Array.isArray(payments) ? payments : []).forEach((payment) => {
+        if (Array.isArray(payment?.lineItems) && payment.lineItems.length > 0) {
+            payment.lineItems.forEach((item) => {
+                const invoiceNo = String(item?.invoiceNo || '').trim();
+                if (!invoiceNo) return;
+                paidByInvoice[invoiceNo] = (paidByInvoice[invoiceNo] || 0) + (Number(item?.allocatedAmount) || 0);
+            });
+            return;
+        }
+
+        const invoiceNo = String(payment?.invoiceNo || '').trim();
+        if (!invoiceNo) return;
+        paidByInvoice[invoiceNo] = (paidByInvoice[invoiceNo] || 0) + (Number(payment?.totalAmount || payment?.amount || payment?.netAmount || payment?.net_amount) || 0);
+    });
+
+    return paidByInvoice;
+}
+
 // Get top clients from actual data
-function getTopClientsFromData(limit = 5, dataStore = getDashboardStore()) {
+function getTopClientsFromData(limit = 5, dataStore = getDashboardStore(), selectedMonthKey = null) {
     const invoices = Array.isArray(dataStore.invoices) ? dataStore.invoices : [];
+    const payments = Array.isArray(dataStore.payments) ? dataStore.payments : [];
+    const paidByInvoice = buildPaidAmountsByInvoice(payments);
 
     // Group outstanding balances by client.
     const clientData = {};
     invoices.forEach((inv) => {
-        const clientName = inv.clientName || inv.client_name || 'Unknown';
+        if (selectedMonthKey) {
+            const invoiceMonthKey = getInvoiceMonthKey(inv);
+            if (invoiceMonthKey !== selectedMonthKey) {
+                return;
+            }
+        }
+
+        const clientName = inv.clientName || inv.client_name || inv.client || 'Unknown';
         if (!clientData[clientName]) {
             clientData[clientName] = {
                 name: clientName,
@@ -775,11 +805,14 @@ function getTopClientsFromData(limit = 5, dataStore = getDashboardStore()) {
             };
         }
 
+        const invoiceNo = String(inv.invoiceNo || inv.invoice_no || inv.id || '').trim();
         const totalAmount = Number(inv.totalAmount ?? inv.total ?? inv.amount ?? inv.invoiceAmount ?? inv.invoice_amount ?? 0) || 0;
         const detailsBalance = Number(inv?.details?.balance);
         const explicitBalance = Number(inv.balance ?? inv.pendingAmount ?? inv.pending_amount ?? detailsBalance);
         const detailsPaid = Number(inv?.details?.paidAmount ?? inv?.details?.paid_amount ?? 0) || 0;
-        const paidAmount = Number(inv.paidAmount ?? inv.paid_amount ?? inv.receivedAmount ?? detailsPaid ?? 0) || 0;
+        const invoicePaid = Number(inv.paidAmount ?? inv.paid_amount ?? inv.receivedAmount ?? detailsPaid ?? 0) || 0;
+        const paymentAmount = Number(invoiceNo ? paidByInvoice[invoiceNo] : 0) || 0;
+        const paidAmount = Math.max(invoicePaid, paymentAmount, 0);
 
         const pendingAmount = Number.isFinite(explicitBalance)
             ? Math.max(0, explicitBalance)
@@ -857,26 +890,61 @@ function getClientsChartData(limit = 10, dataStore = getDashboardStore()) {
         }
     });
     
-    const dummyClients = [
-        { name: 'Modern Fleet Services', vehicleCount: 4600, monthlyPayments: 420000 },
-        { name: 'Fast Transport', vehicleCount: 3200, monthlyPayments: 315000 },
-        { name: 'Prime Movers', vehicleCount: 1850, monthlyPayments: 275000 },
-        { name: 'Global Freight', vehicleCount: 1025, monthlyPayments: 210000 },
-        { name: 'Swift Haulage', vehicleCount: 875, monthlyPayments: 198000 }
-    ];
+    // Convert clientData object to array and sort by vehicle count
+    const clientsArray = Object.values(clientData).map(c => ({
+        name: c.name,
+        vehicleCount: c.vehicleCount || 0,
+        monthlyPayments: c.monthlyPayments || 0
+    }));
 
-    return dummyClients.slice(0, limit);
+    clientsArray.sort((a, b) => b.vehicleCount - a.vehicleCount);
+
+    return clientsArray.slice(0, limit);
 }
 // Get payment status from actual data
 function getPaymentStatus(dataStore = getDashboardStore(), selectedMonthKey = null) {
-    // Hardcoded payment status to align with the dummy revenue values.
+    const invoices = Array.isArray(dataStore.invoices) ? dataStore.invoices : [];
+    const payments = Array.isArray(dataStore.payments) ? dataStore.payments : [];
+    const paidByInvoice = buildPaidAmountsByInvoice(payments);
+
+    const filteredInvoices = invoices.filter(inv => {
+        if (!selectedMonthKey) return true;
+        const key = getInvoiceMonthKey(inv);
+        return key === selectedMonthKey;
+    });
+
+    let paid = 0; let pending = 0; let overdue = 0;
+    let paidCount = 0; let pendingCount = 0; let overdueCount = 0;
+
+    const today = new Date();
+
+    filteredInvoices.forEach(inv => {
+        const total = Number(inv.totalAmount ?? inv.total ?? inv.amount ?? inv.invoiceAmount ?? inv.invoice_amount ?? 0) || 0;
+        const invoiceNo = String(inv.invoiceNo || inv.invoice_no || inv.id || '').trim();
+        const paidAmountFromMap = Number(invoiceNo ? paidByInvoice[invoiceNo] : 0) || 0;
+        const explicitPaid = Number(inv.paidAmount ?? inv.paid_amount ?? inv.receivedAmount ?? 0) || 0;
+        const paidAmount = Math.max(explicitPaid, paidAmountFromMap, 0);
+
+        const pendingAmount = Math.max(0, total - paidAmount);
+
+        paid += paidAmount;
+        pending += pendingAmount;
+
+        const dueDate = getRecordDate(inv, ['dueDate', 'due_date', 'due', 'dueAt']);
+        const isOverdue = pendingAmount > 0 && dueDate && dueDate < today;
+
+        if (pendingAmount <= 0) paidCount += 1;
+        else if (isOverdue) { overdueCount += 1; overdue += pendingAmount; }
+        else pendingCount += 1;
+    });
+
     return {
-        paid: 6000000,
-        pending: 4520036,
-        overdue: 1630451,
-        paidCount: 86,
-        pendingCount: 45,
-        overdueCount: 12
+        paid: Math.round(paid),
+        pending: Math.round(pending),
+        overdue: Math.round(overdue),
+        paidCount,
+        pendingCount,
+        overdueCount
     };
 }
 
