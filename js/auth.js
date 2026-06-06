@@ -91,9 +91,29 @@ class AuthService {
                 return { success: false, message: 'Your account is inactive. Please contact admin.' };
             }
 
-            // Update last_login timestamp
-            if (this.user?.id) {
-                supabase.from('users').update({ last_login: new Date().toISOString() }).eq('id', this.user.id).then();
+            // Update last_login timestamp: prefer matching by auth_user_id (Supabase auth user id)
+            // This avoids mismatches when `this.user.id` contains the auth uid instead of the users table id.
+            try {
+                const authUserId = data?.session?.user?.id || null;
+                const ts = new Date().toISOString();
+                if (authUserId) {
+                    supabase.from('users').update({ last_login: ts }).eq('auth_user_id', authUserId).then((res) => {
+                        // If no rows updated, attempt fallback by users.id
+                        if (res?.error || (res?.data && res.data.length === 0)) {
+                            if (this.user?.id) {
+                                supabase.from('users').update({ last_login: ts }).eq('id', this.user.id).then();
+                            }
+                        }
+                    }).catch(() => {
+                        if (this.user?.id) {
+                            supabase.from('users').update({ last_login: ts }).eq('id', this.user.id).then();
+                        }
+                    });
+                } else if (this.user?.id) {
+                    supabase.from('users').update({ last_login: ts }).eq('id', this.user.id).then();
+                }
+            } catch (e) {
+                // ignore update failures; non-fatal for login flow
             }
 
             this.applyUserPermissions();
@@ -220,6 +240,36 @@ class AuthService {
         API.clearToken();
         localStorage.removeItem(STORAGE_KEYS.USER);
         localStorage.removeItem(STORAGE_KEYS.SESSION_START);
+    }
+
+    // Helper: Force update last_login for the currently authenticated user and log response.
+    // Useful for manual verification in browser console: `window.forceUpdateLastLogin()`
+    async forceUpdateLastLogin() {
+        try {
+            const supabase = window.supabaseClient;
+            if (!supabase || !supabase.auth) {
+                console.warn('[forceUpdateLastLogin] Supabase client unavailable');
+                return null;
+            }
+            const userResp = await supabase.auth.getUser();
+            const authUserId = userResp?.data?.user?.id || null;
+            if (!authUserId) {
+                console.warn('[forceUpdateLastLogin] No authenticated user');
+                return null;
+            }
+            const ts = new Date().toISOString();
+            const res = await supabase.from('users').update({ last_login: ts }).eq('auth_user_id', authUserId).select('*');
+            console.debug('[forceUpdateLastLogin] update by auth_user_id response:', res);
+            if (res.error || (res.data && res.data.length === 0)) {
+                const fallback = await supabase.from('users').update({ last_login: ts }).eq('id', this.user?.id || authUserId).select('*');
+                console.debug('[forceUpdateLastLogin] fallback update response:', fallback);
+                return fallback;
+            }
+            return res;
+        } catch (e) {
+            console.error('[forceUpdateLastLogin] error:', e);
+            return null;
+        }
     }
 
     async resolveSessionUser(session) {
