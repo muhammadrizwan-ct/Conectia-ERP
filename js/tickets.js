@@ -265,6 +265,14 @@ function escapeHtmlTickets(value) {
         .replace(/'/g, '&#39;');
 }
 
+function isTicketOverdue(ticket) {
+    if (!ticket) return false;
+    const dueDate = new Date(ticket.due_date || ticket.dueDate || '');
+    if (Number.isNaN(dueDate.getTime())) return false;
+    if (String(ticket.status || '').toLowerCase() === 'finished') return false;
+    return dueDate < new Date();
+}
+
 // Generate next ticket number (TKT-0001, TKT-0002, ...)
 async function generateTicketNumber() {
     const { data } = await supabase
@@ -419,6 +427,8 @@ function renderTicketsTable(tickets) {
         const dueDate = ticket.due_date ? new Date(ticket.due_date).toLocaleDateString() : '-';
         const createdDate = ticket.created_at ? new Date(ticket.created_at).toLocaleString() : '-';
         const safeId = escapeHtmlTickets(ticket.id);
+        const isOverdueDueDate = isTicketOverdue(ticket);
+        const dueDateClassAttr = isOverdueDueDate ? 'class="overdue-due-date"' : '';
 
         // Determine latest activity (ticket update or latest comment)
         let latestActivity = ticket.updated_at;
@@ -442,7 +452,7 @@ function renderTicketsTable(tickets) {
         html += `<td><span style="background: ${priorityCfg.bg}; color: ${priorityCfg.color}; padding: 4px 10px; border-radius: 4px; font-weight: 600; font-size: 12px;">${escapeHtmlTickets(priorityCfg.label)}</span></td>`;
         html += `<td><span style="background: ${statusCfg.bg}; color: ${statusCfg.color}; padding: 4px 10px; border-radius: 4px; font-weight: 600; font-size: 12px;"><i class="fas ${statusCfg.icon}" style="margin-right: 4px;"></i>${escapeHtmlTickets(statusCfg.label)}</span></td>`;
         html += `<td>${escapeHtmlTickets(ticket.created_by)}</td>`;
-        html += `<td>${escapeHtmlTickets(dueDate)}</td>`;
+        html += `<td ${dueDateClassAttr}>${escapeHtmlTickets(dueDate)}</td>`;
         html += `<td>${escapeHtmlTickets(createdDate)}</td>`;
         html += `<td style="white-space: nowrap;">
             <div style="display: inline-flex; align-items: center; gap: 6px;">
@@ -939,6 +949,7 @@ async function viewTicketDetail(ticketId) {
     const dueDate = ticket.due_date ? new Date(ticket.due_date).toLocaleDateString() : '-';
     const createdDate = ticket.created_at ? new Date(ticket.created_at).toLocaleString() : '-';
     const updatedDate = ticket.updated_at ? new Date(ticket.updated_at).toLocaleString() : '-';
+    const isOverdueDueDate = isTicketOverdue(ticket);
 
     const comments = await fetchTicketComments(ticketId);
     const commentsHTML = renderCommentsHTML(comments);
@@ -972,7 +983,7 @@ async function viewTicketDetail(ticketId) {
                         </div>
                         <div>
                             <small style="color: var(--gray-500);">Due Date</small>
-                            <div style="font-weight: 600;">${escapeHtmlTickets(dueDate)}</div>
+                            <div class="${isOverdueDueDate ? 'overdue-due-date' : ''}" style="font-weight: 600;">${escapeHtmlTickets(dueDate)}</div>
                         </div>
                         <div>
                             <small style="color: var(--gray-500);">Created</small>

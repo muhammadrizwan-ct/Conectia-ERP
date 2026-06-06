@@ -939,3 +939,8 @@ body {
     margin-left: 8px;
     animation: toolbar-alert-blink 1s linear infinite;
 }
+.overdue-due-date {
+    color: #b91c1c;
+    font-weight: 700;
+    animation: toolbar-alert-blink 1s linear infinite;
+}
